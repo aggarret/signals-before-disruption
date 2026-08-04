@@ -1,0 +1,16 @@
+# River Personality Monitor — Python dependencies
+# Install: pip install -r requirements.txt
+
+# Data pipeline
+polars==1.43.2
+pyarrow==24.0.0
+duckdb==1.5.5
+requests==2.34.2
+pandas==2.3.3
+numpy==2.2.6
+
+# Dash frontend
+dash==4.4.1
+plotly==6.9.0
+dash-bootstrap-components==2.0.4
+dash-mantine-components==2.8.0

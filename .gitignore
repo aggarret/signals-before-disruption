@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+
+# Data (too large for git, regenerable via pipeline)
+data/raw_cache/
+data/raw_observations/
+data/daily_entity_metrics/
+data/daily_category_metrics/
+data/seasonal_baselines.parquet
+data/backup/
+data/*.log
+data/UPDATE_LOG.md
+
+# Test artifacts
+_test_*.html
+*.test.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# OpenClaw workspace files (personal, not project)
+handoff.md
+_guide_content.md
+
+# Temporary
+*.tmp
+*.bak
+_*.py
+_scratch/
+_test_*.png
+_test_*.html

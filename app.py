@@ -1,0 +1,184 @@
+"""app.py — River Personality Monitor: multipage Dash application (Pass E).
+
+Two pages (Dash ``register_page`` system, ``use_pages`` enabled):
+
+    /        Dashboard — the full seven-panel dark-slate monitor:
+             header → KPI row → (map | region table + fastest risers)
+             → hydrograph → personality cards → raw-data drawer → footer
+    /guide   Guide — placeholder (being implemented by another agent)
+
+Page modules live in ``pages/`` (imported by ``app.enable_pages()`` at the
+bottom of this module, after every symbol they import is defined) and own all
+callbacks: each component's own ``register_callbacks`` handles its internal
+interactivity (map clicks, range buttons, drawer open/close, CSV export,
+region-row selection), and the dashboard page's integration callbacks keep the
+state-store mirrors (``selected-metric``, ``selected-date``,
+``selected-station``, ``selected-region``, ``date-range``) in sync with the
+panels' controls and re-render the sections that have no internal callbacks
+(KPI cards, region table, personality cards, raw-drawer contents) whenever
+their inputs change.
+
+Data access: one shared read-only DuckDB connection (queries.get_connection)
+created at import; the parquet dataset is immutable during serving, so this is
+thread-safe for every callback.
+
+Run locally:   python3 app.py            -> http://localhost:8050
+Deploy:        gunicorn app:server       (WSGI entry for Cloud Run)
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from typing import Dict
+
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+# When run as a script (`python3 app.py`) this module is `__main__`, but the
+# page modules do `from app import ...`. Without this alias that import would
+# re-execute this file as a SECOND module named "app" — a second Dash app, a
+# second DuckDB connection, and callbacks registered on the wrong instance.
+# Aliasing __main__ as "app" makes `from app import ...` resolve to THIS
+# module in every run mode (script, gunicorn app:server, `import app`).
+if __name__ == "__main__":
+    sys.modules.setdefault("app", sys.modules["__main__"])
+
+import pandas as pd
+import dash
+import dash_bootstrap_components as dbc
+import dash_mantine_components as dmc
+from dash import Dash, dcc, html
+
+import queries
+from components import map_panel
+
+# ---------------------------------------------------------------------------
+# Startup data (queried once — the parquet is immutable during serving)
+# ---------------------------------------------------------------------------
+conn = queries.get_connection()
+
+DEFAULT_METRIC = "streamflow"
+# Last date with broad gauge coverage (map / KPI / region default view). The
+# ingest's final day is usually partial, so this scans back for a date where
+# >= 50% of streamflow gauges report.
+DEFAULT_DATE = str(map_panel.get_default_date(conn))
+
+# Dataset-wide facts for the header / footer.
+_METRICS = ("streamflow", "gage_height", "water_temperature")
+TOTAL_ROWS = sum(
+    int(queries._dataset_stats(conn, m)["total_rows"]) for m in _METRICS
+)
+N_GAUGES = int(conn.execute("SELECT count(*) FROM stations").fetchone()[0])
+
+_latest = conn.execute(
+    f"SELECT MAX(observed_at) FROM read_parquet('{queries._EM_GLOB}')"
+).fetchone()[0]
+LATEST_DATA_DATE = str(pd.Timestamp(_latest).date())
+
+# entity_id -> station_name, loaded once (used for header / drill-downs).
+STATION_NAMES: Dict[str, str] = dict(
+    pd.read_csv(os.path.join(_ROOT, "stations.csv"))
+    .set_index("entity_id")["station_name"]
+    .to_dict()
+)
+
+# App-level store ids (mirrors of the panels' own controls / stores). Kept at
+# app level (as in the original single-page app) and imported by
+# pages/dashboard.py.
+_ID_METRIC_STORE = "selected-metric"
+_ID_DATE_STORE = "selected-date"
+_ID_STATION_STORE = "selected-station"
+_ID_REGION_STORE = "selected-region"
+_ID_RANGE_STORE = "date-range"
+
+# Section containers re-rendered by the integration callbacks.
+_ID_KPI_CONTAINER = "kpi-cards-container"
+_ID_REGION_CONTAINER = "region-table-container"
+_ID_PERSONALITY_CONTAINER = "personality-cards-container"
+_ID_DRAWER_CONTAINER = "raw-drawer-container"
+
+# Muted text shades (match assets/style.css palette).
+TEXT_MUTED = "#94a3b8"
+TEXT_FAINT = "#64748b"
+
+# ---------------------------------------------------------------------------
+# App + server
+# ---------------------------------------------------------------------------
+# NOTE: `use_pages` is intentionally NOT passed to the constructor. Dash 4.4.1
+# imports page modules eagerly inside Dash.__init__ (init_app -> enable_pages),
+# i.e. before the module-level `app` name below is bound, so a page doing
+# `from app import app` would hit a partially-initialized module. Instead we
+# flip `app.use_pages` on and call `app.enable_pages()` at the bottom of this
+# module, once `app` and every symbol the pages import already exist.
+app = Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.DARKLY],
+    assets_folder="assets",
+)
+server = app.server  # WSGI entry for gunicorn / Cloud Run
+
+# Mantine dark theme (matches the existing slate-900 palette).
+_MANTINE_THEME = {
+    "primaryColor": "teal",
+    "colorScheme": "dark",
+    "fontFamily": "Inter, -apple-system, Segoe UI, Roboto, sans-serif",
+    "defaultRadius": "md",
+}
+
+# App-level store ids (mirrors of the panels' own controls / stores).
+_ID_METRIC_STORE = "selected-metric"
+_ID_DATE_STORE = "selected-date"
+_ID_STATION_STORE = "selected-station"
+_ID_REGION_STORE = "selected-region"
+_ID_RANGE_STORE = "date-range"
+
+# Section containers re-rendered by the dashboard page's integration callbacks.
+_ID_KPI_CONTAINER = "kpi-cards-container"
+_ID_REGION_CONTAINER = "region-table-container"
+_ID_PERSONALITY_CONTAINER = "personality-cards-container"
+_ID_DRAWER_CONTAINER = "raw-drawer-container"
+
+# Muted text shades (match assets/style.css palette).
+TEXT_MUTED = "#94a3b8"
+TEXT_FAINT = "#64748b"
+
+
+def _navbar() -> dbc.NavbarSimple:
+    """Top navigation shared by all pages."""
+    return dbc.NavbarSimple(
+        children=[
+            dbc.NavItem(dbc.NavLink("Dashboard", href="/", active="exact")),
+            dbc.NavItem(dbc.NavLink("Guide", href="/guide", active="exact")),
+        ],
+        brand="🌊 River Personality Monitor",
+        brand_href="/",
+        color="#0f172a",
+        dark=True,
+        style={"borderBottom": "1px solid #334155"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Page container: shared navbar + routed page content
+# ---------------------------------------------------------------------------
+app.layout = dmc.MantineProvider(
+    theme=_MANTINE_THEME,
+    children=[
+        dcc.Location(id="url", refresh=False),
+        _navbar(),
+        dash.page_container,
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Multipage routing: import pages/ and register the page router.
+# (See the NOTE at the Dash construction above for why this happens here.)
+# ---------------------------------------------------------------------------
+app.use_pages = True
+app.enable_pages()
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=8050)

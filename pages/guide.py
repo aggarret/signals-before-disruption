@@ -1,0 +1,811 @@
+"""pages/guide.py — River Personality Monitor: the Guide page ("/guide").
+
+A dark-themed explainer for the dashboard: what the app does, why it exists,
+a concrete use case, other applications, a walkthrough of every dashboard
+component, the anomaly color scale, the data sources & methodology, the
+technical stack, and the gauge network.
+
+Static page — no callbacks, no Dash state. Colors match assets/style.css
+(slate-900 background #0f172a, slate-800 cards #1e293b, slate-200 text
+#e2e8f0, slate-400 muted #94a3b8, teal accent #14b8a6, slate-700 borders
+#334155) and the anomaly palette used across the dashboard (amber / amber-teal
+/ teal / teal-cyan / cyan / crimson).
+
+Startup facts (conn, N_GAUGES, TOTAL_ROWS, LATEST_DATA_DATE) are imported from
+app.py — safe because those names are defined above app.py's `app = Dash(...)`
+line, which is when Dash imports this page.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from typing import Any, List, Tuple
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+import dash
+import dash_bootstrap_components as dbc
+from dash import html
+
+from app import LATEST_DATA_DATE, N_GAUGES, TOTAL_ROWS, conn  # noqa: E402
+
+dash.register_page(
+    __name__,
+    path="/guide",
+    name="Guide",
+    title="River Personality Monitor — Guide",
+)
+
+# ---------------------------------------------------------------------------
+# Palette (single source of truth for this page; mirrors assets/style.css)
+# ---------------------------------------------------------------------------
+BG = "#0f172a"        # page background
+CARD = "#1e293b"      # card surface
+TEXT = "#e2e8f0"      # body text
+MUTED = "#94a3b8"     # secondary text
+FAINT = "#64748b"     # tertiary text / subtitles
+ACCENT = "#14b8a6"    # teal accent (headings)
+BORDER = "#334155"    # borders / dividers
+
+# Anomaly z-score palette (matches components/map_panel.py exactly).
+Z_AMBER = "#f59e0b"
+Z_AMBER_TEAL = "#7dccc4"
+Z_TEAL = "#14b8a6"
+Z_TEAL_CYAN = "#0dd4be"
+Z_CYAN = "#06b6d4"
+Z_CRIMSON = "#f43f5e"
+Z_NULL = "#475569"
+Z_NO_DATA = "#334155"
+
+_BODY = {"color": TEXT, "fontSize": "14px", "lineHeight": "1.65"}
+_MUTED = {"color": MUTED, "fontSize": "13px", "lineHeight": "1.6"}
+_FAINT = {"color": FAINT, "fontSize": "12px"}
+
+
+# ---------------------------------------------------------------------------
+# Section helpers
+# ---------------------------------------------------------------------------
+def _section_card(title: str, body_children: List[Any],
+                  icon: str = "") -> dbc.Card:
+    """One guide section: teal header + dark body card."""
+    return dbc.Card(
+        [
+            dbc.CardHeader(
+                html.H5(
+                    f"{icon} {title}" if icon else title,
+                    style={"color": ACCENT, "margin": "0", "fontWeight": "700"},
+                ),
+                style={"backgroundColor": CARD, "borderBottom": f"1px solid {BORDER}"},
+            ),
+            dbc.CardBody(body_children,
+                         style={"backgroundColor": CARD, "padding": "1.1rem 1.25rem"}),
+        ],
+        style={"marginBottom": "16px", "border": f"1px solid {BORDER}",
+               "borderRadius": "8px", "backgroundColor": CARD},
+    )
+
+
+def _p(text: str, style: Any = None) -> html.P:
+    return html.P(text, style={**_BODY, **(style or {})})
+
+
+def _sub(text: str, style: Any = None) -> html.Div:
+    return html.Div(text, style={**_MUTED, **(style or {})})
+
+
+def _h6(text: str) -> html.H6:
+    return html.H6(text, style={"color": TEXT, "fontWeight": "700",
+                                "marginTop": "14px", "marginBottom": "6px"})
+
+
+def _bullet(label: str, text: str, color: str = ACCENT) -> html.Div:
+    """Labeled bullet: accent-colored marker + bold label + muted text."""
+    return html.Div(
+        [
+            html.Span("▸ ", style={"color": color, "fontWeight": "700"}),
+            html.Span(f"{label}: " if label else "",
+                      style={"color": TEXT, "fontWeight": "600"}),
+            html.Span(text, style={"color": MUTED}),
+        ],
+        style={"marginBottom": "8px", "fontSize": "13px", "lineHeight": "1.6"},
+    )
+
+
+def _number_step(n: int, text: str) -> html.Div:
+    """Numbered workflow step: teal number chip + muted body text."""
+    return html.Div(
+        [
+            html.Span(
+                str(n),
+                style={
+                    "display": "inline-flex", "alignItems": "center",
+                    "justifyContent": "center", "minWidth": "26px", "height": "26px",
+                    "borderRadius": "50%", "backgroundColor": "rgba(20,184,166,0.15)",
+                    "color": ACCENT, "fontWeight": "700", "fontSize": "13px",
+                    "marginRight": "10px", "flex": "0 0 auto",
+                },
+            ),
+            html.Span(text, style={"color": MUTED, "fontSize": "13px",
+                                   "lineHeight": "1.6"}),
+        ],
+        style={"display": "flex", "alignItems": "flex-start", "marginBottom": "10px"},
+    )
+
+
+def _swatch(color: str, label: str, note: str = "") -> html.Div:
+    """One color-scale row: square swatch + label + optional note."""
+    return html.Div(
+        [
+            html.Span("■", style={"color": color, "fontSize": "20px",
+                                  "marginRight": "10px", "lineHeight": "1"}),
+            html.Span(label, style={"color": MUTED, "fontSize": "13px",
+                                    "fontWeight": "600"}),
+            html.Span(f"  {note}", style={"color": FAINT, "fontSize": "12px"})
+            if note else None,
+        ],
+        style={"display": "flex", "alignItems": "center", "marginBottom": "8px"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Component-guide row (2-column: icon + name | description)
+# ---------------------------------------------------------------------------
+def _component_row(icon: str, name: str, shows: str, data: str,
+                   interact: str, look_for: str) -> html.Div:
+    """One dashboard-component row: left = icon + name, right = description."""
+    def _line(kind: str, color: str, text: str) -> html.Div:
+        return html.Div(
+            [
+                html.Span(f"{kind} — ", style={"color": color, "fontWeight": "600",
+                                               "fontSize": "12px"}),
+                html.Span(text, style={"color": color, "fontSize": "12px"}),
+            ],
+            style={"marginBottom": "5px", "lineHeight": "1.55"},
+        )
+
+    return html.Div(
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.Div(icon, style={"fontSize": "22px",
+                                              "marginBottom": "4px"}),
+                        html.Div(name, style={
+                            "color": TEXT, "fontWeight": "700", "fontSize": "14px",
+                        }),
+                    ],
+                    xs=12, md=3,
+                    style={"paddingTop": "2px"},
+                ),
+                dbc.Col(
+                    [
+                        _line("What it shows", ACCENT, shows),
+                        _line("Data", FAINT, data),
+                        _line("Interact", FAINT, interact),
+                        _line("Look for", FAINT, look_for),
+                    ],
+                    xs=12, md=9,
+                ),
+            ],
+            class_name="g-2",
+        ),
+        style={"padding": "10px 2px", "borderBottom": f"1px solid {BORDER}"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sections
+# ---------------------------------------------------------------------------
+def _hero() -> html.Div:
+    return html.Div(
+        [
+            html.H1("🌊 River Personality Monitor", style={
+                "color": ACCENT, "fontWeight": "800", "fontSize": "36px",
+                "textAlign": "center", "marginBottom": "4px",
+            }),
+            html.Div("A Guide to the Dashboard", style={
+                "color": MUTED, "fontSize": "16px", "textAlign": "center",
+                "marginBottom": "16px", "fontWeight": "600",
+            }),
+            html.Div(
+                f"Signals Before Disruption · {N_GAUGES} USGS gauges · "
+                "20-year baselines",
+                style={"color": FAINT, "fontSize": "13px", "textAlign": "center",
+                       "marginBottom": "20px", "fontWeight": "600",
+                       "letterSpacing": "0.02em"},
+            ),
+            _p(
+                "The River Personality Monitor is a daily-updated operations "
+                "dashboard that characterizes how 52 USGS river gauges across "
+                "8 U.S. regions are behaving right now, relative to what those "
+                "same rivers have done every day for the past 20 years. Instead "
+                "of answering “is the river high?” it answers “is this river "
+                "behaving like itself?” — is it flashy today, sitting near a "
+                "record, rising fast, or quietly trending toward drought? It is "
+                "built for water-resource managers, hydrologists, emergency "
+                "managers, and anyone who wants statistical context around a "
+                "river reading: every number on the page is an anomaly score, a "
+                "percentile, or a rate of change computed against a fixed "
+                "2004–2023 seasonal baseline. This is not a simple flood map; it "
+                "is a personality profile of the nation's rivers, updated per "
+                "day, drillable down to the raw USGS API payload that backs "
+                "every datapoint.",
+                style={"maxWidth": "900px", "margin": "0 auto", "textAlign": "center",
+                       "fontSize": "15px"},
+            ),
+        ],
+        style={"padding": "30px 12px 22px"},
+    )
+
+
+def _purpose() -> dbc.Card:
+    body = [
+        _p(
+            "The app characterizes river behavior across 52 USGS gauges — "
+            "drainage areas from 55 mi² (the Naselle River, WA) to 697,000 mi² "
+            "(the Mississippi at St. Louis) — using seasonal z-score anomalies. "
+            "For each gauge, each metric, and each day of the year, it knows "
+            "the historical mean (μ) and standard deviation (σ) of that day's "
+            "flow from a fixed 20-year baseline (2004–2023). Every observed "
+            "value is compared to that expectation and expressed as "
+            "z = (observed − μ) / σ — the number of standard deviations away "
+            "from normal. |z| ≥ 2.5 marks a statistically unusual day, and the "
+            "whole dashboard is built around surfacing, ranking, and drilling "
+            "into those days."
+        ),
+        _h6("Why “personality”"),
+        _p(
+            "Rivers have character. A mountain stream responds to a storm in "
+            "hours (flashy); the Mississippi takes days (buffered). Some rivers "
+            "flirt with their all-time records routinely; others never come "
+            "close. The app quantifies this character with three per-gauge "
+            "measures:"
+        ),
+        _bullet("Flashiness", "the Richards-Baker Index per calendar year — "
+                "sum(|daily change|) ÷ sum(daily average). A value near 1.0 "
+                "means the river's day-to-day swings are as large as its "
+                "typical flow; values under 0.1 mean a very stable, buffered "
+                "river."),
+        _bullet("Flow percentile", "where today's value sits vs. every "
+                "observation 2004–2026 (rank-based; ties share a percentile)."),
+        _bullet("Record proximity", "today's value ÷ the gauge's all-time "
+                "maximum observed daily average."),
+        _sub("Read together, these cards answer: “is this spike normal for this "
+             "river, or is this river just naturally dramatic?”",
+             style={"marginTop": "6px"}),
+        _h6("The statistical approach in plain language"),
+        _number_step(1, "Fixed 20-year baseline (2004–2023). For every "
+                        "(gauge, metric) pair, the pipeline computes μ and σ "
+                        "for each day-of-year using a ±7-day circular window — "
+                        "e.g., the baseline for March 1 includes Feb 22 – Mar 8 "
+                        "across all 20 years, wrapping around year boundaries. "
+                        "That is up to 20 × 15 = 300 observations per "
+                        "day-of-year."),
+        _number_step(2, "Seasonal expectation, not a flat average. A z-score in "
+                        "January is computed against January's baseline, so "
+                        "snowmelt season and baseflow season each get their own "
+                        "“normal.”"),
+        _number_step(3, "Anomaly score. For every observed day: "
+                        "z = (average − μ) / σ, using sample standard deviation "
+                        "(ddof=1). σ = 0 or missing → anomaly is null (no "
+                        "signal), which the UI renders as slate gray."),
+        _number_step(4, "Event threshold |z| ≥ 2.5. Roughly the 99th percentile "
+                        "of normal variation — under a standard normal "
+                        "distribution, |z| ≥ 2.5 happens only ~1.2% of the time "
+                        "(~0.6% per tail). The app deliberately does not flag "
+                        "z = 1.5 or 2.0: those are “a bit high.” Flowing at "
+                        "2.5σ+ above its seasonal mean means the river is doing "
+                        "something genuinely unusual — the kind of signal worth "
+                        "a phone call. (In practice the raw anomaly "
+                        "distribution is asymmetric — min −27.3, median −0.26, "
+                        "max 74.7 — because floods are unbounded above while "
+                        "flow is floored at zero.)"),
+    ]
+    return _section_card("Purpose", body, icon="🎯")
+
+
+def _use_case() -> dbc.Card:
+    body = [
+        _p(
+            "Imagine you manage water resources for a multi-state region and "
+            "want to know, in 90 seconds, whether anything is wrong with the "
+            "rivers today."
+        ),
+        html.Div(
+            [
+                _number_step(1, "Start at the Anomaly Scorecards (top-left, above "
+                                "the filter bar). The visible card shows the #1 "
+                                "most anomalous date in the entire dataset — e.g., "
+                                "Sep 19, 2004 with 22 anomalous events (17 "
+                                "streamflow + 5 gage height). Hover to reveal the "
+                                "top-10 ranking as a CSS-only dropdown, each with "
+                                "its per-metric breakdown. This panel is "
+                                "deliberately not affected by the metric/date "
+                                "filter."),
+                _number_step(2, "Pick that date in the Date filter. The sticky "
+                                "filter bar's Mantine date picker opens with "
+                                "decade → year → month drill-down, so navigating "
+                                "20+ years is fast. Set the date and the map, KPI "
+                                "cards, region table, and hydrograph all re-render "
+                                "for that single day."),
+                _number_step(3, "The map updates to show the national picture. The "
+                                "choropleth colors each state by its region's "
+                                "average anomaly; the 52 station markers (size "
+                                "∝ √flow) are colored by each gauge's own z-score "
+                                "using the shared palette. You instantly see where "
+                                "the country is teal (normal), cyan (high), "
+                                "crimson (extreme high), or amber (extreme low)."),
+                _number_step(4, "Notice a cluster in a region. Click a state on "
+                                "the choropleth (or a region row in the Regional "
+                                "Rollup) to filter the Fastest Risers panel to "
+                                "that region. The rollup shows, per region: Gauges "
+                                "Reporting, Events (|z|≥2.5), and Avg Anomaly, "
+                                "sorted with the most stressed region on top."),
+                _number_step(5, "See the Fastest Risers for that region — the "
+                                "top-5 gauges by 3-day rise rate, cyan for rising "
+                                "and amber for falling. A big cyan number here is "
+                                "a flood-watch trigger: the gauge is climbing fast "
+                                "and the column tells you how fast."),
+                _number_step(6, "Click a gauge on the map. The hydrograph opens "
+                                "for that station: the observed daily series "
+                                "(white) over the seasonal baseline μ with ±1σ "
+                                "and ±2σ teal bands, spanning the 3 months ending "
+                                "at the selected date, with colored markers on "
+                                "every |z| ≥ 2.5 day and 3-day rise-rate bars "
+                                "below. The stats row shows current value, anomaly "
+                                "z, flow percentile, and record proximity."),
+                _number_step(7, "Check the personality cards. Is this gauge "
+                                "naturally flashy (High/Very High R-B Index), or "
+                                "is this spike out of character? Is it at 92% of "
+                                "its all-time record (cyan → approaching record) "
+                                "or past the 95% crimson zone? That distinction "
+                                "changes how seriously you take a single reading."),
+                _number_step(8, "Open the raw data drawer (“Inspect raw data” at "
+                                "the bottom of the page). The slide-up panel shows "
+                                "the exact USGS OGC API JSON payload stored for "
+                                "that gauge-metric-day — syntax-highlighted "
+                                "server-side — so you can verify approval status, "
+                                "qualifiers, and units before acting. Download CSV "
+                                "exports every raw observation row for that "
+                                "gauge-metric."),
+            ],
+            style={"marginTop": "8px", "marginBottom": "6px"},
+        ),
+        _h6("Decisions this informs"),
+        _bullet("Reservoir releases", "a fast riser + 2.5σ+ event + near-record "
+                "proximity justifies pre-release before the flood wave arrives."),
+        _bullet("Flood watches", "anomaly clusters across a region plus high rise "
+                "rates are a concrete, defensible early-warning trigger."),
+        _bullet("Drought monitoring", "sustained negative z-scores over months — "
+                "visible in the monthly anomaly chart — separate “low for August” "
+                "from “low for March.”"),
+        _bullet("Data QA", "gap markers and the Data Health KPI distinguish a "
+                "sensor outage from a dry river."),
+    ]
+    return _section_card("A Proposed Use Case: A Water Resources Manager's "
+                         "Morning Scan", body, icon="🧭")
+
+
+def _applications() -> dbc.Card:
+    body = [
+        _bullet("Flood early warning",
+                "the dashboard surfaces speed (3-day rise rate), magnitude "
+                "(z-score), and geographic clustering (regional avg anomaly + "
+                "event counts) in one view. Watching a region's event count "
+                "climb day-over-day while several gauges go cyan/crimson is a "
+                "concrete trigger, not a hunch."),
+        _bullet("Drought monitoring",
+                "sustained negative z-scores over months show up as amber-"
+                "dominant maps and in the Monthly Anomaly Bar Chart. Because "
+                "baselines are seasonal, “low for August” is correctly separated "
+                "from “low for March.”"),
+        _bullet("Climate trend analysis",
+                "the Monthly Anomaly Bar Chart (272 months, Jan 2004 → Aug 2026) "
+                "marks months above mean + 1σ of the monthly distribution in "
+                "crimson; comparing year-over-year patterns reveals whether "
+                "extreme-flow events are becoming more frequent in any season."),
+        _bullet("Educational tool",
+                "every statistical concept is on screen with a real example — "
+                "z-scores, seasonal baselines, standard-deviation bands, "
+                "percentiles, the Richards-Baker index, record proximity — and "
+                "the raw drawer exposes the actual API payload behind each "
+                "chart."),
+        _bullet("Portfolio piece",
+                "a complete full-stack data project: rate-limited API ingestion, "
+                "a verified gauge-selection methodology, an immutable parquet "
+                "data lake, a read-only DuckDB serving layer, and a fully "
+                "interactive Dash visualization with drill-downs to the raw "
+                "JSON."),
+    ]
+    return _section_card("Other Potential Applications", body, icon="💡")
+
+
+def _components_guide() -> dbc.Card:
+    rows = [
+        _component_row(
+            "🎯", "Anomaly Scorecards",
+            "The #1 most anomalous date in the whole dataset — the date with "
+            "the most |z| ≥ 2.5 events across all metrics and all regions — "
+            "with the event count in large crimson type (e.g., Sep 19, 2004 — "
+            "22 anomalous events). Hovering opens a CSS-only dropdown ranking "
+            "#2–#10, each with its event count and per-metric breakdown "
+            "(e.g., “Streamflow 17 · Gage Height 5”).",
+            "queries.get_top_anomaly_dates(conn, n=10), summing event_count "
+            "from daily_category_metrics by date. Computed once at startup "
+            "from the immutable parquet; deliberately NOT affected by the "
+            "metric/date filter.",
+            "Hover the card to expand the top-10 dropdown.",
+            "The dataset's “hall of fame” of extreme days — when many gauges "
+            "fire at once, that is a storm or heatwave signature.",
+        ),
+        _component_row(
+            "📅", "Monthly Anomaly Bar Chart",
+            "Total anomalous events per month (all metrics, all regions), "
+            "spanning Jan 2004 → Aug 2026 (272 months, 16,441 total events). "
+            "Teal bars are normal months; crimson marks statistically elevated "
+            "months — those at or above the dynamic threshold of mean + 1σ of "
+            "the monthly distribution.",
+            "queries.get_monthly_anomaly_counts; the threshold is computed at "
+            "render time. Like the scorecard, static and filter-independent.",
+            "Hover a bar for the month, total events, and extreme-entity count.",
+            "Year-over-year patterns of crimson months — are extreme-flow "
+            "events becoming more frequent in any season?",
+        ),
+        _component_row(
+            "🎛️", "Metric & Date Filter",
+            "The sticky filter bar (position: sticky; top: 0) stays visible "
+            "while the page scrolls and controls every filtered component below "
+            "it — map, KPI cards, region table, fastest risers, hydrograph, "
+            "personality cards, and raw drawer.",
+            "Metric dropdown (Streamflow / Gage height / Water temperature) and "
+            "a Mantine DatePickerInput limited to 2004-01-01 → the default date "
+            "(the most recent day with ≥50% of streamflow gauges reporting — "
+            "currently 2026-08-01, because the ingest's final day is usually "
+            "partial).",
+            "Pick a metric and a date; the picker opens to a decade → year → "
+            "month drill-down so 20+ years of navigation takes seconds.",
+            "Switching metrics tells different stories — temperature extremes "
+            "rarely align with flow extremes.",
+        ),
+        _component_row(
+            "📋", "KPI Cards",
+            "Four network-level summaries for the selected metric/date: Extreme "
+            "Events (gauges at |z| ≥ 2.5, crimson when > 0), Fastest Riser "
+            "(largest 3-day rise rate — e.g., Mississippi River at Grafton, IL "
+            "+6,533 ft³/s/day on the default date), Most Below Normal (region "
+            "with the lowest mean anomaly, amber), and Data Health (gauges "
+            "reporting / 52, gap rate, total rows).",
+            "queries.get_kpi_cards, backed by the same cached date slice the "
+            "map colors by (so the shown z always matches the region name).",
+            "No interaction — re-rendered whenever the metric or date changes.",
+            "Extreme Events > 0; a large signed rise rate; and the per-metric "
+            "gap rates (streamflow 0.04%, gage height 6.8%, water temperature "
+            "33.5%).",
+        ),
+        _component_row(
+            "🗺️", "National Overview Map",
+            "A state choropleth colored by each region's average anomaly, with "
+            "52 station markers on top (size ∝ √flow, 5–20 px; color = the "
+            "gauge's own z-score). States without gauges are neutral gray; "
+            "regions with no anomaly data today are slate.",
+            "get_region_table for the choropleth (discretized into the 6-bin z "
+            "palette so even extreme values like z = 74 render as plain "
+            "crimson) + the cached daily slice for the markers.",
+            "Click a state to select its region (filters the fastest risers); "
+            "click a gauge to select it for the hydrograph and personality "
+            "cards (white ring on the selection). Zoom/pan persist across "
+            "updates (uirevision).",
+            "Direction and severity at a glance: cyan/crimson = unusually high, "
+            "amber family = unusually low; big markers are major rivers.",
+        ),
+        _component_row(
+            "🗂️", "Regional Rollup Table",
+            "One row per region — Region, Gauges Reporting, Events (|z|≥2.5), "
+            "Avg Anomaly — sorted by Avg Anomaly descending so the most "
+            "stressed region sits on top. Avg Anomaly cells are color-coded "
+            "(+ → teal-cyan, − → amber).",
+            "queries.get_region_table for the selected metric/date (8 regions, "
+            "paginated).",
+            "Click a row (radio or cell) to highlight it in solid teal and "
+            "write the region to region-table-store, which filters the Fastest "
+            "Risers table below. Selections stay correct after native "
+            "sorting/pagination.",
+            "Which regions concentrate today's events; a strongly negative "
+            "region is a drought signal.",
+        ),
+        _component_row(
+            "⚡", "Fastest Risers Table",
+            "The top-5 gauges by 3-day rise rate for the selected region: Rank "
+            "(teal highlight), Station, Rise Rate (cyan rising / amber "
+            "falling), and Current Flow. Placeholder message until a region is "
+            "selected.",
+            "The fastest_risers list[struct] column precomputed in "
+            "daily_category_metrics, via queries.get_fastest_risers.",
+            "Select a region row in the Regional Rollup to populate it.",
+            "A big cyan rise rate is a flood-watch trigger. The data honestly "
+            "includes negative rises when fewer than 5 gauges are rising in a "
+            "region — that is the signal.",
+        ),
+        _component_row(
+            "🌊", "Hydrograph",
+            "The drill-down centerpiece for one gauge × one metric over a "
+            "window ending at the selected date. Top subplot: observed daily "
+            "series (white), seasonal baseline μ (teal) with ±1σ / ±2σ "
+            "confidence bands, last year's flow as a dashed ghost, a "
+            "water-temperature overlay (dashed amber, right axis, only when "
+            "data exists), palette-colored markers on every |z| ≥ 2.5 day, and "
+            "gray × gap markers. Bottom subplot: 3-day rise-rate bars (cyan "
+            "up / amber down). Stats row: current value, anomaly z, flow "
+            "percentile, record proximity.",
+            "queries.get_hydrograph_data (calendar-reindexed — missing days are "
+            "explicit rows), get_baseline_band (joined to observed dates by "
+            "day-of-year), get_previous_year_flow. The figure never touches "
+            "data files directly.",
+            "Range buttons [1M][3M][6M][1Y][All] — all windows end at the "
+            "selected date; hover for day-level values; adaptive date ticks "
+            "keep the axis readable at any zoom.",
+            "The white line punching outside the ±2σ band, clusters of anomaly "
+            "markers, a surge of rise-rate bars — and runs of gray ×'s that "
+            "reveal sensor outages (e.g., the Connecticut River's temp series "
+            "ended in 2004).",
+        ),
+        _component_row(
+            "🧬", "Personality Cards",
+            "Three cards profiling how the selected river behaves: Flashiness "
+            "(Richards-Baker Index + regional rank + a Low < 0.1 / Moderate "
+            "0.1–0.3 / High 0.3–0.6 / Very High > 0.6 badge), Flow Percentile "
+            "(rank among ALL observations 2004–2026, drawn as a progress bar "
+            "colored by the gauge's anomaly z-score), and Record Proximity "
+            "(current ÷ all-time max, graded amber < 25% · teal 25–75% · cyan "
+            "75–95% · crimson > 95%).",
+            "queries.get_personality_cards + get_flashiness_index (per "
+            "calendar year, over observed days with completeness_score > 0).",
+            "Select a gauge on the map; the cards follow metric, date, and "
+            "selection.",
+            "Is the spike in character? A naturally flashy river (High/Very "
+            "High) vs. a stable river at 92% of its record — different "
+            "seriousness. (Reference: the Connecticut River's 2026 index is "
+            "0.163 — moderate, ranked 4 of 7 in its region.)",
+        ),
+        _component_row(
+            "🔬", "Raw Data Drawer",
+            "A slide-up panel pinned to the bottom of the viewport (hidden by "
+            "default), showing the exact USGS OGC API JSON payload stored for "
+            "the selected gauge-metric-day — pretty-printed and "
+            "syntax-highlighted server-side (keys teal, strings green, numbers "
+            "cyan, booleans crimson, nulls amber) with a byte-size note — plus "
+            "a Download CSV button.",
+            "raw_observations parquet (per-year files) via "
+            "queries.get_raw_payload; the CSV exports every raw observation "
+            "row for the gauge-metric as {entity_id}_{metric}_raw.csv.",
+            "“Inspect raw data” opens the drawer, “Close” hides it, “⬇ Download "
+            "CSV” exports via dcc.Download.",
+            "Approval status (provisional vs approved), qualifiers like "
+            "“estimated,” and units — the audit trail behind every number.",
+        ),
+    ]
+    return _section_card("Dashboard Components Guide", rows, icon="🧩")
+
+
+def _color_scale() -> dbc.Card:
+    body = [
+        _p(
+            "One palette (defined once in components/map_panel.py as "
+            "z_to_color()) is used consistently everywhere: the map's station "
+            "markers, the choropleth region colors, the hydrograph's anomaly "
+            "markers and stats-row z chip, and the personality cards' "
+            "percentile bar. The legend under the map lists it explicitly."
+        ),
+        html.Div(
+            [
+                _swatch(Z_AMBER, "Extreme low", "z ≤ −2.0"),
+                _swatch(Z_AMBER_TEAL, "Low", "−2.0 < z ≤ −1.5"),
+                _swatch(Z_TEAL, "Near normal", "−1.5 < z < +1.5"),
+                _swatch(Z_TEAL_CYAN, "High", "+1.5 ≤ z < +2.0"),
+                _swatch(Z_CYAN, "Very high", "+2.0 ≤ z < +3.0"),
+                _swatch(Z_CRIMSON, "Extreme high", "z ≥ +3.0"),
+                _swatch(Z_NULL, "No anomaly data", "no baseline / no signal"),
+                _swatch(Z_NO_DATA, "No gauges in state", "choropleth only"),
+            ],
+            style={"marginTop": "10px"},
+        ),
+        _p(
+            "Read it like a thermometer with two ends: teal is “normal for this "
+            "day of year,” cyan/crimson mean the river is carrying unusually "
+            "much (crimson = |z| ≥ 3, genuinely extreme), and the amber family "
+            "means unusually little. The same palette colors low-flow events "
+            "amber and high-flow events cyan/crimson, so a quick glance at a "
+            "map tells you direction and severity simultaneously. The "
+            "choropleth discretizes region averages to the same bins (via "
+            "category codes) so even absurd z values (e.g., a near-zero-σ "
+            "baseline producing z = 74) render as plain crimson — never a "
+            "clipped or interpolated artifact.",
+            style={"marginTop": "12px"},
+        ),
+    ]
+    return _section_card("Understanding the Color Scale", body, icon="🎨")
+
+
+def _methodology() -> dbc.Card:
+    body = [
+        _bullet("Source", "USGS Water Data OGC API (modernized endpoint) — the "
+                "daily collection (statistic_id=00003, daily mean), fetched as "
+                "GeoJSON FeatureCollections with cursor-based pagination, "
+                "batched multi-gauge/multi-parameter requests, and exponential "
+                "backoff (15s → 120s) for rate limits."),
+        _bullet("Network", f"{N_GAUGES} gauges · 8 regions · 26 states, curated "
+                "from 91 probed candidates with two-stage verification (a 2004 "
+                "data probe + a time-series-metadata span cross-check). Gauge "
+                "sizes span 55 mi² → 697,000 mi²."),
+        _bullet("Metrics", "3 per gauge: streamflow (ft³/s), gage height (ft), "
+                "water temperature (°C). Coverage varies by gauge — gage height "
+                "and water temperature are not measured everywhere (62 empty "
+                "gauge-metric combos); real data sparsity, not a bug."),
+        _bullet("Baseline", "2004-01-01 → 2023-12-31 (fixed 20 years), ±7-day "
+                "circular day-of-year window (34,038 rows = 93 gauge-metric "
+                "combos × 366 DOYs; μ, σ with ddof=1, n_years). σ = 0 or null "
+                "→ anomaly is null."),
+        _bullet("Anomaly score", "(average − μ) / σ per (gauge, metric, day). "
+                "Distribution: min −27.3, median −0.26, max 74.7 — asymmetric "
+                "by the nature of rivers."),
+        _bullet("Event threshold", "|z| ≥ 2.5 → 16,441 extreme rows across the "
+                "dataset (~2.4% of observed days)."),
+        _bullet("Flashiness", "Richards-Baker Index = sum(|daily change|) ÷ "
+                "sum(average) per calendar year over observed days only, plus "
+                "a regional rank."),
+        _bullet("Flow percentile", "rank-based over all observations "
+                "2004–2026 (rank('max') / count × 100 — ties share a "
+                "percentile)."),
+        _bullet("Record proximity", "average ÷ max(average) over the full "
+                "2004–2026 record per gauge-metric."),
+        _bullet("Rise rate", "rise_rate_3d = (average − average.shift(3)) / 3 "
+                "computed on the calendar-reindexed series, so a shift across a "
+                "gap is null rather than a silently wrong delta."),
+        _bullet("Data pipeline", "polars (ingestion + transform) → parquet, "
+                "hive-partitioned by metric=*/year=* (entity_id-sorted row "
+                "groups of 8192 for pruning) → DuckDB (read-only, thread-local "
+                "connections) for serving. Three layers: raw_observations "
+                "(633,257 rows, raw payloads retained for audit), "
+                "daily_entity_metrics (687,166 calendar-reindexed rows), "
+                "daily_category_metrics (164,241 regional rollup rows incl. "
+                "fastest_risers as list[struct])."),
+        _bullet("Immutability", "the parquet dataset is immutable during "
+                "serving — caches are therefore safe (LRU date-slice cache of "
+                "8, per-metric dataset stats, per-gauge historical maxima), and "
+                "every callback runs on its own cheap read-only connection."),
+        _sub(f"Data range in this build: 2004 through {LATEST_DATA_DATE} · "
+             f"{TOTAL_ROWS:,} total rows across all metrics.",
+             style={"marginTop": "10px"}),
+    ]
+    return _section_card("Data Sources & Methodology", body, icon="🗄️")
+
+
+def _stack() -> dbc.Card:
+    body = [
+        _bullet("Python 3.10", "framework build; requests 2.34.2 for "
+                "ingestion, PyArrow for parquet."),
+        _bullet("Dash 4.4.1", "app framework — callbacks, stores, and Dash "
+                "Pages (multi-page routing); served via WSGI."),
+        _bullet("dash-bootstrap-components 2.0.4", "DARKLY theme + layout "
+                "grid, cards, buttons."),
+        _bullet("dash-mantine-components 2.8.0", "the DatePickerInput "
+                "(decade/year/month drill-down) and MantineProvider theming "
+                "(primary color teal, dark scheme)."),
+        _bullet("DuckDB 1.5.5", "read-only serving layer over parquet — one "
+                "thread-local connection per worker thread."),
+        _bullet("polars 1.43.2", "ingestion/transform pipeline (baselines, "
+                "entity metrics, category metrics)."),
+        _bullet("Plotly 6.9.0", "all figures — choropleth + scattergeo map, "
+                "hydrograph subplots, progress bars."),
+        _bullet("Deploy", "gunicorn `app:server` (WSGI entry, Cloud Run-ready; "
+                "run locally with `python3 app.py` → http://localhost:8050)."),
+    ]
+    return _section_card("Technical Stack", body, icon="⚙️")
+
+
+def _gauge_network() -> dbc.Card:
+    # Live rollup straight from the registered stations table (same source the
+    # dashboard queries) — always in sync with stations.csv.
+    region_rows: List[Tuple[str, int]] = [
+        (str(r), int(n))
+        for r, n in conn.execute(
+            "SELECT region, count(*) FROM stations GROUP BY region ORDER BY region"
+        ).fetchall()
+    ]
+
+    _cell = {"padding": "5px 12px", "border": f"1px solid {BORDER}",
+             "color": MUTED, "fontSize": "13px"}
+
+    table_rows = [
+        html.Tr(
+            [
+                html.Td(region, style=_cell),
+                html.Td(f"{n}", style={**_cell, "textAlign": "right"}),
+            ]
+        )
+        for region, n in region_rows
+    ]
+    table_rows.append(
+        html.Tr(
+            [
+                html.Td("Total", style={**_cell, "fontWeight": "700",
+                                        "color": TEXT}),
+                html.Td(f"{N_GAUGES}", style={**_cell, "fontWeight": "700",
+                                              "color": TEXT, "textAlign": "right"}),
+            ]
+        )
+    )
+
+    table = html.Table(
+        [
+            html.Thead(html.Tr([
+                html.Th("Region", style={**_cell, "color": ACCENT,
+                                         "fontWeight": "700"}),
+                html.Th("Gauges", style={**_cell, "color": ACCENT,
+                                         "fontWeight": "700",
+                                         "textAlign": "right"}),
+            ])),
+            html.Tbody(table_rows),
+        ],
+        style={"width": "100%", "borderCollapse": "collapse",
+               "margin": "8px 0 14px", "backgroundColor": BG},
+    )
+
+    body = [
+        _p(f"{N_GAUGES} USGS gauges across 8 regions (verified live against "
+           "stations.csv, registered as a DuckDB table):"),
+        table,
+        _bullet("Station record", "stations.csv carries entity_id "
+                "(USGS-XXXXXXX), station_name, state, region, latitude, "
+                "longitude, hydrologic_unit_code, site_type, agency_code, "
+                "drainage_area, first_year_of_record (1861–1967 — e.g., the "
+                "Mississippi at St. Louis since 1861), and "
+                "earliest_verified_year (2004 for all — the verified start of "
+                "the modern daily record used as the baseline)."),
+        _bullet("Metric coverage", "all 52 gauges report streamflow; gage "
+                "height and water temperature exist at the subset of gauges "
+                "where USGS actually measures them — hence the higher gap "
+                "rates (6.8% for gage height, 33.5% for water temperature vs. "
+                "0.04% for streamflow) — itself a data-health signal the "
+                "dashboard surfaces rather than hides."),
+    ]
+    return _section_card("The Gauge Network", body, icon="🗺️")
+
+
+# ---------------------------------------------------------------------------
+# Page layout
+# ---------------------------------------------------------------------------
+def build_guide_layout() -> dbc.Container:
+    """The complete guide page: hero + eight section cards + footer."""
+    footer = html.Div(
+        f"Data: USGS Water Data OGC API · Baseline: 2004-2023 · "
+        f"{N_GAUGES} gauges · {TOTAL_ROWS:,} rows",
+        className="footer",
+    )
+
+    return dbc.Container(
+        fluid=True,
+        id="guide-container",
+        children=[
+            _hero(),
+            _purpose(),
+            _use_case(),
+            _applications(),
+            _components_guide(),
+            _color_scale(),
+            _methodology(),
+            _stack(),
+            _gauge_network(),
+            footer,
+            html.Div(style={"height": "32px"}),
+        ],
+        style={"backgroundColor": BG},
+    )
+
+
+def layout() -> dbc.Container:
+    """Dash-pages layout entry point for the "/guide" page."""
+    return build_guide_layout()
