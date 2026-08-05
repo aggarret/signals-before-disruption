@@ -439,3 +439,80 @@ All parquet writes in `update_data.py`, `build_metrics.py`, and `build_category_
 - `app.py` — modified (import data_manager, call `ensure_fresh_data()` at startup)
 - `README.md` — modified (data update section expanded with scheduling, auto-fetch, atomic writes)
 - `progress.md` — modified (this entry)
+
+---
+
+## Next Session: Cloud Run Deployment
+
+### Goal
+Deploy the River Personality Monitor to Google Cloud Run, serving the Dash app from the codebase (pulled from GitHub) with parquet data files served from Google Cloud Storage (GCS).
+
+### Architecture Overview
+- **Cloud Run** hosts the Dash app (gunicorn `app:server`)
+- **GitHub repo** is the source of truth — Cloud Build triggers on push to `main`, builds the container from the repo
+- **Google Cloud Storage (GCS)** holds the parquet data layers (~32 MB) — the container fetches them at startup or mounts them as a volume
+- **Cloud Scheduler** replaces launchd — triggers the daily 7 AM data update via a Cloud Run job or Cloud Function
+- **data_manager.py** continues to work — its staleness check + background update logic is platform-agnostic (subprocess call to `update_data.py`)
+
+### Tasks (use sub-agents — code-executor for implementation, fusion-search for GCS/Cloud Run docs research)
+
+#### 1. GCP Project Setup
+- Create a new GCP project (or use an existing one)
+- Enable Cloud Run, Cloud Build, Cloud Storage, and Artifact Registry APIs
+- Install and authenticate `gcloud` CLI
+- Set up billing
+
+#### 2. GCS Bucket for Parquet Data
+- Create a GCS bucket (e.g. `river-personality-monitor-data`)
+- Upload the `data/` directory (raw_observations, daily_entity_metrics, daily_category_metrics, seasonal_baselines, stations.csv)
+- Decide: copy-on-startup (simpler) vs FUSE mount (no cold start delay). Recommend copy-on-startup for ~32 MB — trivial size
+
+#### 3. Dockerfile
+- Python 3.10+ base image
+- Install requirements.txt
+- Copy app code from git (not local files — the Dockerfile should `git clone` or Cloud Build should use the repo as source)
+- At container startup: fetch parquet files from GCS to local `data/` directory
+- Run `gunicorn app:server` on port 8080 (Cloud Run default)
+
+#### 4. Cloud Build Trigger
+- Connect Cloud Build to the GitHub repo (`github.com/aggarret/signals-before-disruption`)
+- Trigger on push to `main`
+- Build the Docker image, push to Artifact Registry
+- Deploy to Cloud Run automatically
+
+#### 5. Update Pipeline for Cloud
+- Replace launchd with **Cloud Scheduler** → triggers a Cloud Run job that runs `update_data.py`
+- The update script fetches from USGS API, writes updated parquet to local `data/`, then syncs back to GCS
+- OR: run the update as a separate Cloud Run service/job that writes directly to GCS
+- `data_manager.py`'s staleness check still works — if the Cloud Run container starts after 7 AM and data is stale, it triggers a background update (fetches from USGS, writes locally, then the next deploy/GCS sync picks it up)
+
+#### 6. Environment Variables & Config
+- `GCS_BUCKET` — bucket name for parquet data
+- `GCP_PROJECT` — project ID
+- Any USGS API config (user agent string)
+- Ensure `.venv/` and `data/backup/` are NOT in the Docker image (use `.dockerignore`)
+
+#### 7. Verification
+- App loads on Cloud Run URL
+- All 18 callbacks work
+- Data is current (check `LATEST_DATA_DATE` in the header)
+- Auto-fetch triggers if data is stale (check `data/auto-update.log`)
+- Manual `update_data.py` run via Cloud Run job works
+- Healthcheck passes in the container
+
+### Key Decisions to Make Next Session
+1. **New GCP project or existing?** — Alfie to decide
+2. **GCS access method** — copy-on-startup (simple, ~1s for 32 MB) vs FUSE mount (no cold start, but more setup)
+3. **Update pipeline in cloud** — Cloud Run job vs Cloud Function vs separate worker service
+4. **Cost** — Cloud Run is pay-per-request, ~$0.0001 per request. For a low-traffic portfolio app this is effectively free
+5. **Custom domain** — Cloud Run provides a URL; custom domain optional
+
+### Sub-Agent Assignments for Next Session
+- **fusion-search**: Research current GCS + Cloud Run + Cloud Build docs (2026), verify API names and CLI commands haven't changed
+- **code-executor**: Implement Dockerfile, .dockerignore, GCS sync script, cloud update script, and any app.py changes needed for cloud config
+- **qwen-planner**: Architecture review — verify the cloud design is sound, identify any gotchas with DuckDB + GCS, parquet on containers, etc.
+
+### Pre-Work (can be done now if time allows)
+- `gcloud auth login` and `gcloud config set project <project_id>`
+- Create the GCS bucket and upload `data/` manually
+- Draft the Dockerfile locally and test with `docker build` + `docker run`
