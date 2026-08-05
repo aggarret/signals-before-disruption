@@ -26,6 +26,7 @@ python3 -m venv .venv
 
 ## Data Update
 
+### Manual
 ```bash
 # Manual update (fetches new + revised data from USGS, rebuilds metrics)
 .venv/bin/python3 update_data.py
@@ -36,6 +37,15 @@ python3 -m venv .venv
 # Health check
 .venv/bin/python3 scripts/healthcheck.py
 ```
+
+### Scheduled (launchd)
+A launchd job runs `update_data.py` daily at 7:00 AM PT. Plist: `~/Library/LaunchAgents/ai.openclaw.river-data-update.plist`.
+
+### Auto-Fetch Safety Net
+When the app starts and data hasn't been updated since 7 AM today, `data_manager.py` automatically triggers a background update via a daemon thread. The app continues serving from the old data until the update completes, then invalidates query caches to pick up the new data. This is a safety net — the launchd job is the primary scheduler.
+
+### Atomic Writes
+All parquet writes in `update_data.py`, `build_metrics.py`, and `build_category_metrics.py` use temp-file + `os.replace()` for atomic replacement. The app never reads a partially-written file during updates.
 
 ## Tech Stack
 
@@ -55,8 +65,9 @@ components/             # 9 dashboard component modules
 queries.py             # DuckDB query layer (11 functions)
 build_metrics.py       # Seasonal baselines + entity metrics builder
 build_category_metrics.py  # Regional rollup builder
+data_manager.py        # Auto-fetch staleness check + background update trigger
 ingest_daily.py        # USGS API fetcher (CLI, cache-aware)
-update_data.py         # Incremental data update orchestrator
+update_data.py         # Incremental data update orchestrator (atomic writes)
 stations.csv           # 52 verified USGS gauges
 data/                  # Parquet layers (~32 MB)
 ```

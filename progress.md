@@ -342,7 +342,7 @@ All 5 passes done: A (queries) → B (map) → C (hydrograph) → D (styling/UI)
 - Workspace: `~/.openclaw/workspace/qwen-planner`
 - SOUL.md and MEMORY.md updated with all three sub-agents
 
-### 7. Data Update Pipeline — ✅ BUILT (⚠️ NOT YET RUN — USGS rate limit)
+### 7. Data Update Pipeline — ✅ COMPLETE (built, run, verified)
 
 **Goal:** Robust daily incremental update that fetches new/revised data from USGS, upserts into raw_observations, and rebuilds all metrics.
 
@@ -368,41 +368,74 @@ All 5 passes done: A (queries) → B (map) → C (hydrograph) → D (styling/UI)
 - **Verified:** agent ran real dry-runs (found 121 new rows for Aug 3-4, 41 updated rows from USGS revisions), sandbox end-to-end test, failure injection, idempotency check
 
 #### 7c. Scheduling + Safety — ✅ COMPLETE
-- **launchd plist:** `~/Library/LaunchAgents/ai.openclaw.river-data-update.plist` — runs daily at 7:00 AM PT (14:00 UTC), NOT loaded yet
+- **launchd plist:** `~/Library/LaunchAgents/ai.openclaw.river-data-update.plist` — runs daily at 7:00 AM PT (14:00 UTC)
 - **Healthcheck:** `scripts/healthcheck.py` — verifies row counts, date freshness, NULL rates, gauge/metric counts, app import
 - **Manual run script:** `scripts/run-update.sh` — executable, logs to `data/update-manual.log`
 
-### ⚠️ WHERE WE LEFT OFF
+---
 
-**The data update pipeline is built and tested but NOT yet run for real.** USGS rate-limited our IP (the subagent's testing fired too many requests). The rate limit should clear in ~15-20 minutes.
+## Session: 2026-08-04 — Real Data Update + Atomic Writes + Auto-Fetch on Staleness
 
-**To complete:**
-1. Wait for USGS rate limit to clear (~15-20 min from 01:35 PDT)
-2. Run the real update: `cd ~/dev/signals-before-disruption && .venv/bin/python3 update_data.py`
-3. Run healthcheck: `.venv/bin/python3 scripts/healthcheck.py`
-4. Verify app still loads: `.venv/bin/python3 -c "import app; print('OK')"`
-5. Load the launchd job: `launchctl load ~/Library/LaunchAgents/ai.openclaw.river-data-update.plist`
-6. (Optional) If no new data was available from USGS, do the trim-10 test: remove latest 10 rows from raw_observations, run update, verify it pulls them back
+### 8. Real Data Update (First Production Run) — ✅ COMPLETE
+- **First real run of `update_data.py`** — 168 new rows, 73 revised rows (provisional → approved), 0 errors
+- Data now current through 2026-08-04
+- Healthcheck passed: 633,425 raw rows, 687,354 entity metrics, 164,283 category metrics, all 52 gauges present
+- App import verified clean
+- UPDATE_LOG.md entry written
+
+### 9. Atomic Parquet Writes — ✅ COMPLETE
+All parquet writes in `update_data.py`, `build_metrics.py`, and `build_category_metrics.py` now use temp-file + `os.replace()` for atomic file replacement. This ensures the Dash app never reads a partially-written parquet file during updates.
+
+**Functions modified:**
+- `update_data.py` — `write_partitions()` (temp file in same dir → `os.replace`, try/except cleanup on failure)
+- `build_metrics.py` — `build_seasonal_baselines()`, `build_daily_entity_metrics()` (same atomic pattern)
+- `build_category_metrics.py` — `build_category_metrics()` (same atomic pattern)
+
+**Verified:**
+- Import test: all modules import clean
+- Dry-run: exit 0, 2,480 rows fetched, no changes written
+- Runtime atomic-write test: partitions written and read back correctly, zero leftover `.tmp` files
+- Failure-cleanup test: temp file unlinked on simulated error, no leftovers
+- No stray temp files in `data/`
+
+### 10. Auto-Fetch on Staleness (`data_manager.py`) — ✅ COMPLETE
+
+**New file:** `data_manager.py` — staleness detection + background update trigger + cache invalidation.
+
+**How it works:**
+- `is_data_stale()` — checks if data was last updated before 7 AM today (using `UPDATE_LOG.md` mtime, with metrics parquet mtime as fallback)
+- `ensure_fresh_data()` — called at app startup; if stale, triggers background update
+- `trigger_background_update()` — spawns a daemon thread running `update_data.py` as a subprocess; never blocks the app
+- `invalidate_caches()` — after successful update, clears `queries.py`'s `_STATS_CACHE`, `_HIST_MAX_CACHE`, `_SLICE_CACHE` so next callbacks read fresh data
+- Thread-safe: `threading.Lock` (process-local) + `flock` (cross-process, so launchd job and app can't collide)
+- Logs to `data/auto-update.log` with timestamps
+
+**Wired into `app.py`:**
+- `import data_manager` added after other imports
+- `data_manager.ensure_fresh_data()` called after DuckDB connection setup, before app layout
+
+**Design principle:** The app always serves from existing data during updates. DuckDB reads parquet per-query, atomic writes ensure no partial reads, and caches are only invalidated after the update completes successfully.
+
+### 11. Final Verification — ✅ COMPLETE (all 8 checks passed)
+1. All modules import clean (update_data, build_metrics, build_category_metrics, data_manager, app)
+2. `is_data_stale()` returns `False` (data is fresh — just updated)
+3. Zero `.tmp` files left in `data/`
+4. Healthcheck: all hard checks pass
+5. App smoke test: Dash app object, server, layout all present
+6. Dry-run: exit 0, no changes
+7. No auto-update log (expected — data was fresh)
+8. Git diff: 5 files changed (update_data.py, build_metrics.py, build_category_metrics.py, data_manager.py [new], app.py)
+
+### Commit
+- **Commit `41f97d9`** on `main`: `feat: atomic writes + auto-fetch on staleness`
+- 5 files changed, 334 insertions, 10 deletions
+- Pushed to `github.com/aggarret/signals-before-disruption`
 
 **Files created/modified this session:**
-- `components/anomaly_scorecards.py` — NEW
-- `pages/dashboard.py` — NEW
-- `pages/guide.py` — NEW
-- `pages/__init__.py` — NEW
-- `update_data.py` — NEW (556 lines)
-- `scripts/healthcheck.py` — NEW
-- `scripts/run-update.sh` — NEW
-- `~/Library/LaunchAgents/ai.openclaw.river-data-update.plist` — NEW
-- `app.py` — modified (MantineProvider, DMC date picker, pages, navbar)
-- `queries.py` — modified (3 new anomaly query functions)
-- `components/personality_cards.py` — modified (flashiness year label, percentile sub-label, badge alignment)
-- `components/hydrograph.py` — modified (wired to selected-date store, 4th callback input)
-- `components/map_panel.py` — modified (date picker prop change)
-- `components/fastest_risers_table.py` — modified (date picker prop change)
-- `assets/style.css` — modified (scorecard/dropdown/chart styles, personality card flex fix)
-- `build_metrics.py` — modified (`--today` flag, parameterized)
-- `build_category_metrics.py` — modified (`--today` flag)
-- `ingest_daily.py` — modified (`--since`/`--end` flags, cache fix, clobbering fix)
-- `requirements.txt` — modified (added `dash-mantine-components`)
-- `SOUL.md` — modified (sub-agent delegation section)
-- `MEMORY.md` — modified (sub-agents entry)
+- `data_manager.py` — NEW (staleness check, background update, cache invalidation)
+- `update_data.py` — modified (atomic writes in `write_partitions()`)
+- `build_metrics.py` — modified (atomic writes in `build_seasonal_baselines()`, `build_daily_entity_metrics()`)
+- `build_category_metrics.py` — modified (atomic writes in `build_category_metrics()`)
+- `app.py` — modified (import data_manager, call `ensure_fresh_data()` at startup)
+- `README.md` — modified (data update section expanded with scheduling, auto-fetch, atomic writes)
+- `progress.md` — modified (this entry)
