@@ -27,8 +27,8 @@ COPY . .
 # MODE=job -> run the Cloud Run job update (handles its own GCS writeback).
 EXPOSE 8080
 
-CMD ["sh", "-c", "if [ \"$MODE\" = \"service\" ]; then \
-  if [ -n \"$GCS_BUCKET\" ]; then python3 cloud_boot.py; fi; \
+CMD ["sh", "-c", "if [ -n \"$GCS_BUCKET\" ]; then python3 cloud_boot.py; fi; \
+  if [ \"$MODE\" = \"service\" ]; then \
   exec gunicorn app:server --workers 1 --threads 8 --bind 0.0.0.0:${PORT:-8080} --timeout 300 --graceful-timeout 10 --access-logfile -; \
 else \
   exec python3 update_data.py; \

@@ -480,7 +480,17 @@ def upload_serving_artifacts(bucket_name: str, max_workers: int = 8,
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
 
-    jobs = [(str(path.relative_to(PROJECT_ROOT)), path) for path in files]
+    def _blob_name(path: Path) -> str:
+        # Bucket layout contract (cloud_boot.py + initial seed): bucket root is
+        # the data dir — e.g. "raw_observations/metric=.../data.parquet",
+        # "seasonal_baselines.parquet", "UPDATE_LOG.md". Non-data files like
+        # stations.csv stay project-root relative.
+        try:
+            return str(path.relative_to(PROJECT_ROOT / "data"))
+        except ValueError:
+            return str(path.relative_to(PROJECT_ROOT))
+
+    jobs = [(_blob_name(path), path) for path in files]
     uploaded = 0
     skipped = 0
     failures: list[str] = []
