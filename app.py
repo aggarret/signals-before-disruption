@@ -92,7 +92,13 @@ STATION_NAMES: Dict[str, str] = dict(
 # query caches are invalidated only after the update completes, so no callback
 # ever sees a partial dataset. Never blocks, never raises.
 # ---------------------------------------------------------------------------
-data_manager.ensure_fresh_data()
+# Cloud Run (GCS_BUCKET set): the background safety-net update is disabled — a
+# separate Cloud Run job refreshes the data and writes back to GCS, and
+# cloud_boot.py already synced the current dataset into ./data/ at startup.
+if os.environ.get("GCS_BUCKET"):
+    print("app: GCS_BUCKET set — skipping data_manager.ensure_fresh_data() (cloud mode)")
+else:
+    data_manager.ensure_fresh_data()
 
 # App-level store ids (mirrors of the panels' own controls / stores). Kept at
 # app level (as in the original single-page app) and imported by

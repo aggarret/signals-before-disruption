@@ -1,0 +1,13 @@
+# Cloud Run container excludes — keep the image lean; data is not baked in.
+.git
+.gitignore
+.venv
+data/
+__pycache__/
+*.pyc
+*.tmp
+video_analyze.py
+_test*.html
+scripts/
+data/backup/
+data/raw_cache/

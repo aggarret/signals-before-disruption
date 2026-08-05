@@ -250,6 +250,10 @@ def ensure_fresh_data() -> Optional[threading.Thread]:
 
     Never blocks, never raises. Returns the update thread, or None.
     """
+    # Cloud Run: a separate Cloud Run job handles updates; the serving
+    # container must NOT run its own background update thread.
+    if os.environ.get("GCS_BUCKET"):
+        return None
     try:
         if is_data_stale():
             _log("ensure_fresh_data: data is stale — triggering background update")

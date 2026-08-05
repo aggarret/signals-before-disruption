@@ -373,6 +373,146 @@ def append_log(text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GCS upload (CLOUD mode only)
+# ---------------------------------------------------------------------------
+
+# CLOUD (GCS upload) contract
+# ----------------------------
+# When the env var GCS_BUCKET is set (Cloud Run job), after a SUCCESSFUL local
+# update AND metrics rebuild we push the serving artifacts to
+# `gs://<GCS_BUCKET>/` so the Dash service picks them up on its next cold
+# start. When GCS_BUCKET is unset (local launchd mode) this whole path is
+# dead code: nothing here is imported, google-cloud-storage is never loaded,
+# and local behavior is byte-identical to before.
+#
+#   * Objects uploaded (blob name == repo-relative path, e.g. "stations.csv",
+#     "data/raw_observations/metric=gage_height/year=2026.parquet"):
+#       - data/raw_observations/            (all metric=*/year=*.parquet)
+#       - data/daily_entity_metrics/        (all metric=*/year=*/data.parquet)
+#       - data/daily_category_metrics/      (all metric=*/year=*/data.parquet)
+#       - data/seasonal_baselines.parquet
+#       - stations.csv
+#       - data/UPDATE_LOG.md
+#   * Each object is written in a single GCS upload, which is atomic per
+#     object — an inconsistent generation is never visible to readers.
+#   * Objects whose remote size AND md5 already match the local file are
+#     skipped (blob.reload exists, so we compare both — not size-only).
+#   * Uploads are parallelized across a small thread pool (default 8 workers)
+#     because there are ~200+ partition files.
+#   * If any object still fails after retries, we raise / exit non-zero so the
+#     Cloud Run job is marked failed. Local data is already updated and safe;
+#     GCS simply stays on its previous generation, which is safe.
+
+
+def _md5_b64(path: Path) -> str:
+    """Base64-encoded MD5 of a file's bytes — the form GCS reports in md5_hash."""
+    import base64
+    import hashlib
+    h = hashlib.md5()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return base64.b64encode(h.digest()).decode("ascii")
+
+
+def _collect_serving_files() -> list[Path]:
+    """All local files that make up the serving artifact set (relative paths)."""
+    files: list[Path] = []
+    if RAW_DIR.exists():
+        files += [p for p in RAW_DIR.rglob("metric=*/year=*.parquet") if p.is_file()]
+    if EM_DIR.exists():
+        files += [p for p in EM_DIR.rglob("metric=*/year=*/data.parquet") if p.is_file()]
+    if CM_DIR.exists():
+        files += [p for p in CM_DIR.rglob("metric=*/year=*/data.parquet") if p.is_file()]
+    for f in (SB_PATH, PROJECT_ROOT / "stations.csv", UPDATE_LOG):
+        if f.is_file():
+            files.append(f)
+    return files
+
+
+def _upload_one(bucket, blob_name: str, local_path: Path,
+                max_attempts: int = 3) -> tuple[str, str | None]:
+    """Upload a single object; returns (status, error_or_None).
+
+    status is "uploaded" or "skipped". On failure after retries, status is
+    "failed" with the last error returned for the caller to raise.
+    """
+    blob = bucket.blob(blob_name)
+    local_size = local_path.stat().st_size
+    # Skip unchanged objects: same remote size AND same remote md5.
+    if blob.exists():
+        try:
+            blob.reload()
+            if blob.size == local_size and blob.md5_hash == _md5_b64(local_path):
+                return "skipped", None
+        except Exception:
+            pass  # can't cheaply verify -> fall through and (re)upload
+    last_err: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            blob.upload_from_filename(str(local_path))
+            return "uploaded", None
+        except Exception as exc:  # noqa: BLE001 - surface all retryable failures
+            last_err = exc
+            if attempt < max_attempts:
+                time.sleep(min(2 ** attempt, 8))
+    return "failed", str(last_err) if last_err else "unknown error"
+
+
+def upload_serving_artifacts(bucket_name: str, max_workers: int = 8,
+                             max_attempts: int = 3) -> dict:
+    """Upload all serving artifacts to `gs://<bucket_name>/` (cloud mode only).
+
+    Raises a RuntimeError if any object remains failed after retries, so the
+    caller can exit non-zero. Returns {"uploaded": n, "skipped": n}.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    # Lazy import: only pulled in on the cloud path so local installs without
+    # google-cloud-storage still work. Uses ADC (Application Default Credentials),
+    # which works automatically on Cloud Run.
+    from google.cloud import storage
+
+    files = _collect_serving_files()
+    if not files:
+        print(f"  [gcs] no serving files found to upload for gs://{bucket_name}/", flush=True)
+        return {"uploaded": 0, "skipped": 0}
+
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+
+    jobs = [(str(path.relative_to(PROJECT_ROOT)), path) for path in files]
+    uploaded = 0
+    skipped = 0
+    failures: list[str] = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {
+            ex.submit(_upload_one, bucket, blob_name, local_path, max_attempts): blob_name
+            for blob_name, local_path in jobs
+        }
+        for fut in as_completed(futures):
+            blob_name = futures[fut]
+            status, err = fut.result()
+            if status == "uploaded":
+                uploaded += 1
+            elif status == "skipped":
+                skipped += 1
+            else:
+                failures.append(f"{blob_name}: {err}")
+
+    print(f"  [gcs] uploaded {uploaded} / skipped (unchanged) {skipped} "
+          f"objects to gs://{bucket_name}/", flush=True)
+    if failures:
+        for f in failures[:10]:
+            print(f"  [gcs] FAILED: {f}", flush=True)
+        if len(failures) > 10:
+            print(f"  [gcs] ... and {len(failures) - 10} more failed objects", flush=True)
+        raise RuntimeError(f"GCS upload: {len(failures)} object(s) failed after "
+                           f"{max_attempts} attempts")
+    return {"uploaded": uploaded, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -561,6 +701,23 @@ def _run() -> int:
         print(f"Rewrote {len(partitions)} partition(s): "
               + ", ".join(sorted(partitions)), flush=True)
     append_log("\n".join(summary))
+
+    # ---- i. CLOUD: upload serving artifacts to GCS --------------------------
+    # Only reached after a successful local update AND metrics rebuild (never
+    # in dry-run, never on the no-op path, never after a failed rebuild). If
+    # GCS_BUCKET is unset (local launchd mode) nothing happens here at all and
+    # behavior stays byte-identical to before.
+    gcs_bucket = os.environ.get("GCS_BUCKET")
+    if gcs_bucket:
+        print(f"\nCloud mode: uploading serving artifacts to gs://{gcs_bucket}/...", flush=True)
+        try:
+            upload_serving_artifacts(gcs_bucket)
+        except Exception as exc:
+            print(f"ERROR: GCS upload failed: {exc}", flush=True)
+            # Local data is already updated + rebuilt and remains usable; GCS
+            # stays on the previous generation (safe). Exit non-zero so the
+            # Cloud Run job is marked failed.
+            return 1
     return 0
 
 
