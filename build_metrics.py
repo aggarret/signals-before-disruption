@@ -30,7 +30,9 @@ Usage: python3 build_metrics.py [--today YYYY-MM-DD]
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import tempfile
 import time
 from datetime import date
 from pathlib import Path
@@ -126,7 +128,17 @@ def build_seasonal_baselines() -> pl.DataFrame:
         )
         .sort(["entity_id", "metric", "day_of_year"])
     )
-    out.write_parquet(OUT_BASELINES, row_group_size=ROW_GROUP_SIZE)
+    # Atomic write: temp file in the same directory (same filesystem), then
+    # os.replace — readers never observe a half-written baselines file.
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(OUT_BASELINES.parent))
+    os.close(tmp_fd)
+    try:
+        out.write_parquet(tmp_path, row_group_size=ROW_GROUP_SIZE)
+        os.replace(tmp_path, str(OUT_BASELINES))
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
     print(f"seasonal_baselines: {out.height} rows ({out['n_years'].null_count()} DOYs without baseline data) -> {OUT_BASELINES}  [{time.perf_counter()-t0:.1f}s]")
     return out
 
@@ -221,9 +233,20 @@ def build_daily_entity_metrics() -> pl.DataFrame:
     for (metric, year), grp in full.group_by(["metric", "year"], maintain_order=True):
         part_dir = OUT_DAILY / f"metric={metric}" / f"year={year}"
         part_dir.mkdir(parents=True, exist_ok=True)
-        grp.sort(["entity_id", "observed_at"]).write_parquet(
-            part_dir / "data.parquet", row_group_size=ROW_GROUP_SIZE
-        )
+        # Atomic write: temp file in the same directory (same filesystem), then
+        # os.replace — readers never observe a half-written partition.
+        path = part_dir / "data.parquet"
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(path.parent))
+        os.close(tmp_fd)
+        try:
+            grp.sort(["entity_id", "observed_at"]).write_parquet(
+                tmp_path, row_group_size=ROW_GROUP_SIZE
+            )
+            os.replace(tmp_path, str(path))
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
         total += grp.height
     n_parts = len(list(OUT_DAILY.glob("metric=*")))
     print(f"daily_entity_metrics: {total} rows across {n_parts} metric dirs -> {OUT_DAILY}  [{time.perf_counter()-t0:.1f}s]")

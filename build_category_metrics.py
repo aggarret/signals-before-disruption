@@ -35,7 +35,9 @@ Usage: python3 build_category_metrics.py [--today YYYY-MM-DD]
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import tempfile
 import time
 from datetime import date
 from pathlib import Path
@@ -149,9 +151,20 @@ def build_category_metrics(today: date | None = None) -> pl.DataFrame:
     for (metric, year), grp in out.group_by(["metric", "year"], maintain_order=True):
         part_dir = OUT_DIR / f"metric={metric}" / f"year={year}"
         part_dir.mkdir(parents=True, exist_ok=True)
-        grp.sort(["date", "region"]).write_parquet(
-            part_dir / "data.parquet", row_group_size=ROW_GROUP_SIZE
-        )
+        # Atomic write: temp file in the same directory (same filesystem), then
+        # os.replace — readers never observe a half-written partition.
+        path = part_dir / "data.parquet"
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(path.parent))
+        os.close(tmp_fd)
+        try:
+            grp.sort(["date", "region"]).write_parquet(
+                tmp_path, row_group_size=ROW_GROUP_SIZE
+            )
+            os.replace(tmp_path, str(path))
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
         total += grp.height
         n_parts += 1
 

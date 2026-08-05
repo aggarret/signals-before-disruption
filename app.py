@@ -52,6 +52,7 @@ import dash_mantine_components as dmc
 from dash import Dash, dcc, html
 
 import queries
+import data_manager
 from components import map_panel
 
 # ---------------------------------------------------------------------------
@@ -83,6 +84,15 @@ STATION_NAMES: Dict[str, str] = dict(
     .set_index("entity_id")["station_name"]
     .to_dict()
 )
+
+# ---------------------------------------------------------------------------
+# Stale-data safety net: if the dataset has not been updated since the
+# scheduled 07:00 local update time, kick off a background refresh now. The
+# app keeps serving the current (old) data while update_data.py runs; the
+# query caches are invalidated only after the update completes, so no callback
+# ever sees a partial dataset. Never blocks, never raises.
+# ---------------------------------------------------------------------------
+data_manager.ensure_fresh_data()
 
 # App-level store ids (mirrors of the panels' own controls / stores). Kept at
 # app level (as in the original single-page app) and imported by

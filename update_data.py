@@ -43,10 +43,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -282,9 +284,19 @@ def write_partitions(df: pl.DataFrame) -> dict:
         part_dir = RAW_DIR / f"metric={metric}"
         part_dir.mkdir(parents=True, exist_ok=True)
         path = part_dir / f"year={year}.parquet"
-        grp.select(RAW_COLUMNS).sort(["entity_id", "observed_at"]).write_parquet(
-            path, row_group_size=ROW_GROUP_SIZE
-        )
+        # Atomic write: temp file in the same directory (same filesystem), then
+        # os.replace — readers never observe a half-written partition.
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(path.parent))
+        os.close(tmp_fd)
+        try:
+            grp.select(RAW_COLUMNS).sort(["entity_id", "observed_at"]).write_parquet(
+                tmp_path, row_group_size=ROW_GROUP_SIZE
+            )
+            os.replace(tmp_path, str(path))
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
         out[str(path.relative_to(PROJECT_ROOT))] = grp.height
     return out
 
