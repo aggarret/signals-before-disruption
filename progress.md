@@ -442,6 +442,57 @@ All parquet writes in `update_data.py`, `build_metrics.py`, and `build_category_
 
 ---
 
+## Session: 2026-08-05 — Cloud Run Deployment — ✅ COMPLETE
+
+### What was built
+
+**GCP Project:** `river-personality-monitor` (us-central1)
+
+**Cloud Run service** (`signals`):
+- URL: https://signals-ox6jzm56ga-uc.a.run.app
+- Image: `us-central1-docker.pkg.dev/river-personality-monitor/signals/signals:v3` (Artifact Registry repo `signals`)
+- Config: 1 worker, 8 threads, 300s timeout, concurrency 8
+- Env: `GCS_BUCKET=river-personality-monitor-data`, `MODE=service`
+
+**GCS bucket** (`river-personality-monitor-data`):
+- Holds all parquet serving layers (raw_observations, daily_entity_metrics, daily_category_metrics), seasonal_baselines.parquet, stations.csv, UPDATE_LOG.md
+- Container syncs from GCS at startup via `cloud_boot.py` (ADC, idempotent size-based skip)
+
+**Cloud Run job** (`daily-usgs-update`):
+- Image: same as service (`signals:v3`), `MODE=job`
+- Env: `GCS_BUCKET=river-personality-monitor-data`
+- Resources: 1 CPU, 2Gi memory, 900s timeout, maxRetries 1
+- Service account: `job-sa@river-personality-monitor.iam.gserviceaccount.com`
+- Runs `update_data.py` → fetches USGS → rebuilds metrics → uploads to GCS
+
+**Cloud Scheduler** (`daily-usgs-7am`):
+- Cron: `0 7 * * *` (7 AM PT, timezone America/Los_Angeles)
+- Triggers `daily-usgs-update` job via HTTP POST
+- Service account: `scheduler-sa@river-personality-monitor.iam.gserviceaccount.com`
+- Attempt deadline: 180s, retry backoff: 5s→3600s
+
+### Files created/modified
+- **`Dockerfile`** (NEW) — Python 3.12-slim, installs requirements, `cloud_boot.py` → gunicorn `app:server` on 8080. `MODE=service` serves, `MODE=job` runs `update_data.py`.
+- **`cloud_boot.py`** (NEW, 144 lines) — GCS sync at startup. Mirrors all dataset blobs from `gs://<GCS_BUCKET>/` into `./data/`. Idempotent (size-based skip). Never crashes boot if local data exists and GCS is unreachable.
+- **`.dockerignore`** (NEW) — Excludes `.git`, `.venv`, `data/`, `__pycache__`, `scripts/`, `data/backup/`, `data/raw_cache/`, test HTML.
+- **`app.py`** — Skips `data_manager.ensure_fresh_data()` when `GCS_BUCKET` is set (cloud mode: job handles updates).
+- **`data_manager.py`** — Returns `None` early from `ensure_fresh_data()` when `GCS_BUCKET` is set.
+- **`update_data.py`** — Added GCS upload path (167 lines): after successful local update + metrics rebuild, uploads all serving artifacts to `gs://<GCS_BUCKET>/`. Parallelized (8 workers), per-object retry (3 attempts), size+md5 skip for unchanged objects. Exits non-zero on upload failure (local data is safe; GCS stays on previous generation).
+- **`requirements.txt`** — Added `gunicorn==23.0.0`, `google-cloud-storage==2.18.2`.
+
+### Commits
+- `bc398cb` — `feat: Cloud Run deployment — Dockerfile, GCS boot sync, cloud update writeback`
+- `bb696b0` — `fix: GCS sync in job mode + bucket-root blob paths (job OOM -> 2Gi)`
+
+### Design decisions
+1. **Copy-on-startup** (not FUSE mount) — data is ~32 MB, trivial to sync in ~1s.
+2. **Separate job for updates** (not in-serving-container background thread) — Cloud Run containers are ephemeral; a dedicated job with 2Gi memory handles the update + GCS writeback reliably.
+3. **Same image for service and job** — `MODE` env var switches behavior. Simplifies CI/CD.
+4. **GCS writeback is atomic per-object** — readers never see a partially-updated dataset. Each object is a single GCS upload (atomic per generation).
+5. **Local mode is unaffected** — all cloud paths are gated on `GCS_BUCKET` env var. Without it, behavior is byte-identical to before.
+
+---
+
 ## Next Session: Cloud Run Deployment
 
 ### Goal
