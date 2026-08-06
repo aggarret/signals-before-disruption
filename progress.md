@@ -451,8 +451,10 @@ All parquet writes in `update_data.py`, `build_metrics.py`, and `build_category_
 **Cloud Run service** (`signals`):
 - URL: https://signals-ox6jzm56ga-uc.a.run.app
 - Image: `us-central1-docker.pkg.dev/river-personality-monitor/signals/signals:v3` (Artifact Registry repo `signals`)
-- Config: 1 worker, 8 threads, 300s timeout, concurrency 8
+- Config: 2 CPU, 2Gi memory, min-instances: 1 (always-on), concurrency 8
 - Env: `GCS_BUCKET=river-personality-monitor-data`, `MODE=service`
+- Cost: ~$37/mo (always-on 2 CPU + 2Gi)
+- Response time: ~0.24s warm (no cold starts — min-instances: 1 keeps it always-on)
 
 **GCS bucket** (`river-personality-monitor-data`):
 - Holds all parquet serving layers (raw_observations, daily_entity_metrics, daily_category_metrics), seasonal_baselines.parquet, stations.csv, UPDATE_LOG.md

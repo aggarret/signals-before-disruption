@@ -54,7 +54,7 @@ The app is deployed on Google Cloud Run with parquet data served from Google Clo
 **Live URL:** https://signals-ox6jzm56ga-uc.a.run.app
 
 ### Architecture
-- **Cloud Run service** (`signals`, us-central1): gunicorn `app:server`, 1 worker / 8 threads, 300s timeout. Image: `us-central1-docker.pkg.dev/river-personality-monitor/signals/signals:v3`
+- **Cloud Run service** (`signals`, us-central1): gunicorn `app:server`, 1 worker / 8 threads, 300s timeout, **2 CPU + 2Gi memory, min-instances: 1** (always-on, no cold starts). Image: `us-central1-docker.pkg.dev/river-personality-monitor/signals/signals:v3`
 - **GCS bucket** (`river-personality-monitor-data`): holds all parquet layers + stations.csv + UPDATE_LOG.md. The container fetches them at startup via `cloud_boot.py` (Application Default Credentials).
 - **Cloud Run job** (`daily-usgs-update`): runs `update_data.py` with `MODE=job` — fetches fresh data from USGS, rebuilds metrics, uploads serving artifacts back to GCS. 2Gi memory, 900s timeout.
 - **Cloud Scheduler** (`daily-usgs-7am`): cron `0 7 * * *` (7 AM PT) triggers the Cloud Run job via HTTP POST.
