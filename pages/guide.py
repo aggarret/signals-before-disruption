@@ -310,84 +310,105 @@ def _purpose() -> dbc.Card:
 def _use_case() -> dbc.Card:
     body = [
         _p(
-            "Imagine you manage water resources for a multi-state region and "
-            "want to know, in 90 seconds, whether anything is wrong with the "
-            "rivers today."
+            "Imagine you manage water resources for a multi-state region. "
+            "Every morning you need to answer one question: is anything wrong "
+            "with the rivers today? The dashboard is designed to answer that "
+            "in under 90 seconds -- and then let you drill as deep as you need."
         ),
+        _h6("The morning scan (today, right now)"),
         html.Div(
             [
-                _number_step(1, "Start at the Anomaly Scorecards (top-left, above "
-                                "the filter bar). The visible card shows the #1 "
-                                "most anomalous date in the entire dataset — e.g., "
-                                "Sep 19, 2004 with 22 anomalous events (17 "
-                                "streamflow + 5 gage height). Hover to reveal the "
-                                "top-10 ranking as a CSS-only dropdown, each with "
-                                "its per-metric breakdown. This panel is "
-                                "deliberately not affected by the metric/date "
-                                "filter."),
-                _number_step(2, "Pick that date in the Date filter. The sticky "
-                                "filter bar's Mantine date picker opens with "
-                                "decade → year → month drill-down, so navigating "
-                                "20+ years is fast. Set the date and the map, KPI "
-                                "cards, region table, and hydrograph all re-render "
-                                "for that single day."),
-                _number_step(3, "The map updates to show the national picture. The "
-                                "choropleth colors each state by its region's "
-                                "average anomaly; the 52 station markers (size "
-                                "∝ √flow) are colored by each gauge's own z-score "
-                                "using the shared palette. You instantly see where "
-                                "the country is teal (normal), cyan (high), "
-                                "crimson (extreme high), or amber (extreme low)."),
-                _number_step(4, "Notice a cluster in a region. Click a state on "
-                                "the choropleth (or a region row in the Regional "
+                _number_step(1, "Open the dashboard. The date filter defaults to "
+                                "the most recent day with at least 50% gauge "
+                                "coverage -- that is \u2018today\u2019 in any "
+                                "meaningful sense. The map, KPI cards, and region "
+                                "table are already rendering for that date. You "
+                                "do not need to touch the date picker to check "
+                                "current conditions."),
+                _number_step(2, "Read the KPI cards (top row). Extreme Events "
+                                "tells you how many gauges are at |z| >= 2.5 right "
+                                "now. Fastest Riser names the gauge climbing "
+                                "fastest and by how much. Most Below Normal flags "
+                                "the region with the lowest mean anomaly. Data "
+                                "Health confirms the gauges are reporting. In a "
+                                "quiet day, all four are calm; in an active day, "
+                                "the crimson numbers jump out immediately."),
+                _number_step(3, "Scan the national map. The choropleth colors "
+                                "each state by its region\u2019s average anomaly; "
+                                "the 52 station markers (size proportional to "
+                                "sqrt(flow)) are colored by each gauge\u2019s own "
+                                "z-score. You instantly see where the country is "
+                                "teal (normal), cyan (high), crimson (extreme "
+                                "high), or amber (extreme low). A cluster of "
+                                "crimson in one region is your first signal."),
+                _number_step(4, "Notice a cluster. Click a state on the "
+                                "choropleth (or a region row in the Regional "
                                 "Rollup) to filter the Fastest Risers panel to "
-                                "that region. The rollup shows, per region: Gauges "
-                                "Reporting, Events (|z|≥2.5), and Avg Anomaly, "
-                                "sorted with the most stressed region on top."),
-                _number_step(5, "See the Fastest Risers for that region — the "
+                                "that region. The rollup shows, per region: "
+                                "Gauges Reporting, Events (|z|>=2.5), and Avg "
+                                "Anomaly, sorted with the most stressed region on "
+                                "top."),
+                _number_step(5, "See the Fastest Risers for that region -- the "
                                 "top-5 gauges by 3-day rise rate, cyan for rising "
-                                "and amber for falling. A big cyan number here is "
-                                "a flood-watch trigger: the gauge is climbing fast "
+                                "and amber for falling. A big cyan number is a "
+                                "flood-watch trigger: the gauge is climbing fast "
                                 "and the column tells you how fast."),
                 _number_step(6, "Click a gauge on the map. The hydrograph opens "
                                 "for that station: the observed daily series "
-                                "(white) over the seasonal baseline μ with ±1σ "
-                                "and ±2σ teal bands, spanning the 3 months ending "
-                                "at the selected date, with colored markers on "
-                                "every |z| ≥ 2.5 day and 3-day rise-rate bars "
-                                "below. The stats row shows current value, anomaly "
-                                "z, flow percentile, and record proximity."),
+                                "(white) over the seasonal baseline \u03bc with "
+                                "\u00b11\u03c3 and \u00b12\u03c3 teal bands, "
+                                "spanning the 3 months ending at the selected "
+                                "date, with colored markers on every |z| >= 2.5 "
+                                "day and 3-day rise-rate bars below. The stats "
+                                "row shows current value, anomaly z, flow "
+                                "percentile, and record proximity -- all for "
+                                "today."),
                 _number_step(7, "Check the personality cards. Is this gauge "
                                 "naturally flashy (High/Very High R-B Index), or "
                                 "is this spike out of character? Is it at 92% of "
-                                "its all-time record (cyan → approaching record) "
+                                "its all-time record (cyan -> approaching record) "
                                 "or past the 95% crimson zone? That distinction "
                                 "changes how seriously you take a single reading."),
-                _number_step(8, "Open the raw data drawer (“Inspect raw data” at "
-                                "the bottom of the page). The slide-up panel shows "
-                                "the exact USGS OGC API JSON payload stored for "
-                                "that gauge-metric-day — syntax-highlighted "
-                                "server-side — so you can verify approval status, "
-                                "qualifiers, and units before acting. Download CSV "
-                                "exports every raw observation row for that "
-                                "gauge-metric."),
+                _number_step(8, "Open the raw data drawer (\u2018Inspect raw "
+                                "data\u2019 at the bottom of the page). The "
+                                "slide-up panel shows the exact USGS OGC API JSON "
+                                "payload stored for that gauge-metric-day -- "
+                                "syntax-highlighted server-side -- so you can "
+                                "verify approval status, qualifiers, and units "
+                                "before acting. Download CSV exports every raw "
+                                "observation row for that gauge-metric."),
             ],
             style={"marginTop": "8px", "marginBottom": "6px"},
         ),
+        _h6("Historical context (when you need it)"),
+        _p(
+            "Above the filter bar, two panels are deliberately filter-"
+            "independent: the Anomaly Scorecards and the Monthly Anomaly Bar "
+            "Chart. These show the full 2004-2026 record -- the #1 most "
+            "anomalous date in the dataset (e.g., Sep 19, 2004 with 22 "
+            "anomalous events) and 272 months of anomaly counts. They are "
+            "context, not the entry point. When today\u2019s scan surfaces "
+            "something unusual, these panels let you ask: how does today "
+            "compare to the worst days on record? Use the date picker to "
+            "navigate to any historical day and the entire dashboard "
+            "re-renders for that date -- same map, same hydrograph, same "
+            "personality cards -- so you can compare a historical flood day "
+            "side-by-side with today using identical visualizations."
+        ),
         _h6("Decisions this informs"),
-        _bullet("Reservoir releases", "a fast riser + 2.5σ+ event + near-record "
-                "proximity justifies pre-release before the flood wave arrives."),
-        _bullet("Flood watches", "anomaly clusters across a region plus high rise "
-                "rates are a concrete, defensible early-warning trigger."),
-        _bullet("Drought monitoring", "sustained negative z-scores over months — "
-                "visible in the monthly anomaly chart — separate “low for August” "
-                "from “low for March.”"),
-        _bullet("Data QA", "gap markers and the Data Health KPI distinguish a "
-                "sensor outage from a dry river."),
+        _bullet("Reservoir releases", "a fast riser + 2.5-sigma+ event + "
+                "near-record proximity justifies pre-release before the flood "
+                "wave arrives."),
+        _bullet("Flood watches", "anomaly clusters across a region plus high "
+                "rise rates are a concrete, defensible early-warning trigger."),
+        _bullet("Drought monitoring", "sustained negative z-scores over "
+                "months -- visible in the monthly anomaly chart -- separate "
+                "\u2018low for August\u2019 from \u2018low for March.\u2019"),
+        _bullet("Data QA", "gap markers and the Data Health KPI distinguish "
+                "a sensor outage from a dry river."),
     ]
-    return _section_card("A Proposed Use Case: A Water Resources Manager's "
-                         "Morning Scan", body, icon="🧭")
-
+    return _section_card("Use Case: A Water Resources Manager\u2019s "
+                         "Morning Scan", body, icon="\U0001f9ed")
 
 def _applications() -> dbc.Card:
     body = [
