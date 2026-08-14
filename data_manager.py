@@ -1,16 +1,18 @@
 """data_manager.py — Stale-data safety net for River Personality Monitor.
 
 When the app starts and the served dataset has not been updated since the
-scheduled 07:00 local update time (the launchd job), this module kicks off a
-background refresh: a daemon thread runs ``update_data.py`` as a subprocess so
+staleness cutoff set by ``UPDATE_HOUR``/``UPDATE_MINUTE`` (currently 07:00), this
+module kicks off a background refresh: a daemon thread runs ``update_data.py`` as a subprocess so
 the app keeps serving the *old* data for the whole duration of the update — no
 callback is ever blocked and no partial data is ever visible. Only after a
 successful update are the module-level query caches in ``queries.py``
 invalidated, so the very next callback reads the freshly written parquet.
 
-This is a safety net, not the scheduler: the 07:00 launchd job is separate.
-This exists for the cases where the app comes up after 07:00 but the job
-hasn't run yet (or failed) — the app then refreshes itself in the background.
+This is a safety net, not the scheduler: the actual scheduler is the launchd
+plist (currently 14:00 and currently NOT loaded). ``UPDATE_HOUR``/``UPDATE_MINUTE``
+only define the staleness cutoff. This exists for the cases where the app comes
+up after the cutoff but the job hasn't run yet (or failed, or isn't loaded) —
+the app then refreshes itself in the background.
 
 Guarantees
   * Never blocks: every public function returns immediately.
@@ -162,7 +164,7 @@ def _acquire_update_flock() -> Optional[object]:
     """Try to take the cross-process update lock.
 
     Returns an open file handle when the lock was acquired, or None when
-    another process currently holds it (e.g. the 07:00 launchd job). On
+    another process currently holds it (e.g. the launchd job). On
     platforms without ``fcntl`` returns a sentinel meaning "acquired" so the
     in-process lock still applies.
     """
@@ -190,14 +192,31 @@ def _run_update(lock: threading.Lock) -> None:
             return
 
         _log("auto-update: starting update_data.py subprocess")
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, "update_data.py"],
             cwd=PROJECT_ROOT,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
         )
-        out = (proc.stdout or "").strip()
-        err = (proc.stderr or "").strip()
+        try:
+            out, err = proc.communicate(timeout=600)
+        except subprocess.TimeoutExpired as exc:
+            proc.kill()
+            try:
+                proc.communicate()
+            except Exception:
+                pass
+            partial_out = (exc.output or "").strip()
+            partial_err = (exc.stderr or "").strip()
+            _log(
+                "auto-update: TIMED OUT (rc=-1) — killed stuck update"
+                f"\n--- stdout ---\n{partial_out}"
+                f"\n--- stderr ---\n{partial_err}"
+            )
+            return
+        out = (out or "").strip()
+        err = (err or "").strip()
 
         if proc.returncode == 0:
             _log(f"auto-update: SUCCESS (rc=0)\n--- stdout ---\n{out}")

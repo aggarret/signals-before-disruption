@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from typing import Dict, Optional
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -98,6 +99,10 @@ STATION_NAMES: Dict[str, str] = dict(
 # cloud_boot.py already synced the current dataset into ./data/ at startup.
 if os.environ.get("GCS_BUCKET"):
     print("app: GCS_BUCKET set — skipping data_manager.ensure_fresh_data() (cloud mode)")
+    if not cloud_boot.wait_until_ready(conn):
+        print("app: WARNING — cloud boot readiness probe timed out; serving anyway")
+    else:
+        print("app: cloud boot readiness confirmed — data queryable")
 else:
     data_manager.ensure_fresh_data()
 
@@ -109,6 +114,7 @@ else:
 # without a redeploy. Driven by a dcc.Interval in the dashboard page.
 # ---------------------------------------------------------------------------
 _GCS_GEN: Optional[int] = None  # last-seen UPDATE_LOG.md generation
+_REFRESH_LOCK = threading.Lock()  # prevents overlapping concurrent GCS re-syncs
 
 
 def refresh_data_if_stale() -> Optional[str]:
@@ -133,21 +139,25 @@ def refresh_data_if_stale() -> Optional[str]:
     if gen == _GCS_GEN:
         return None
 
-    _GCS_GEN = gen
-    print(f"app: detected new GCS dataset (generation {gen}) — re-syncing")
-    cloud_boot.sync_from_gcs(bucket)
-    queries.invalidate_caches()
-
-    DEFAULT_DATE = str(map_panel.get_default_date(conn))
-    _latest = conn.execute(
-        f"SELECT MAX(observed_at) FROM read_parquet('{queries._EM_GLOB}')"
-    ).fetchone()[0]
-    LATEST_DATA_DATE = str(pd.Timestamp(_latest).date())
-    TOTAL_ROWS = sum(
-        int(queries._dataset_stats(conn, m)["total_rows"]) for m in _METRICS
-    )
-    print(f"app: re-sync complete — LATEST_DATA_DATE={LATEST_DATA_DATE}")
-    return LATEST_DATA_DATE
+    if not _REFRESH_LOCK.acquire(blocking=False):
+        return None  # a re-sync is already in flight for this 60s tick; skip
+    try:
+        _GCS_GEN = gen
+        print(f"app: detected new GCS dataset (generation {gen}) — re-syncing")
+        cloud_boot.sync_from_gcs(bucket)
+        queries.invalidate_caches()
+        DEFAULT_DATE = str(map_panel.get_default_date(conn))
+        _latest = conn.execute(
+            f"SELECT MAX(observed_at) FROM read_parquet('{queries._EM_GLOB}')"
+        ).fetchone()[0]
+        LATEST_DATA_DATE = str(pd.Timestamp(_latest).date())
+        TOTAL_ROWS = sum(
+            int(queries._dataset_stats(conn, m)["total_rows"]) for m in _METRICS
+        )
+        print(f"app: re-sync complete — LATEST_DATA_DATE={LATEST_DATA_DATE}")
+        return LATEST_DATA_DATE
+    finally:
+        _REFRESH_LOCK.release()
 
 # App-level store ids (mirrors of the panels' own controls / stores). Kept at
 # app level (as in the original single-page app) and imported by

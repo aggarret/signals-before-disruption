@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from typing import Iterable, List, Optional, Tuple
 
 from google.cloud import storage
@@ -133,6 +134,27 @@ def get_update_generation(bucket_name: str) -> Optional[int]:
     except Exception as exc:
         _log(f"WARNING: freshness check failed: {exc!r}")
         return None
+
+
+def wait_until_ready(conn, *, timeout_s: float = 120.0, probe_sql: str = "SELECT count(*) FROM stations") -> bool:
+    """Block (bounded) until the local served dataset is queryable.
+
+    Called at cloud start so the Dash app does not serve 500s before the
+    boot sync is usable. Probes a cheap query in a retry loop with short
+    sleeps; returns True once it succeeds, False on timeout. Never raises
+    (swallows its own errors and logs them via ``_log``).
+    """
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            conn.execute(probe_sql).fetchone()
+            return True
+        except Exception as exc:  # data not ready yet (or query error)
+            _log(f"wait_until_ready: data not ready yet ({exc!r}); retrying")
+        if time.monotonic() >= deadline:
+            _log("wait_until_ready: TIMED OUT waiting for data to be queryable")
+            return False
+        time.sleep(2.0)
 
 
 def main() -> int:
