@@ -173,6 +173,19 @@ def _hist_max(conn: duckdb.DuckDBPyConnection, entity_id: str, metric: str) -> f
     return _HIST_MAX_CACHE[key]
 
 
+def invalidate_caches() -> None:
+    """Drop every serving cache after the underlying parquet is re-synced
+    (cloud freshness poll). Subsequent queries recompute from the new files.
+
+    The slice cache is cleared under its lock; the stats/hist-max dicts are
+    cleared here too — worst case is a benign recompute, never corruption.
+    """
+    with _CACHE_LOCK:
+        _SLICE_CACHE.clear()
+    _STATS_CACHE.clear()
+    _HIST_MAX_CACHE.clear()
+
+
 def _risers_to_dicts(val: Any) -> List[Dict[str, Any]]:
     """Normalize DuckDB struct[] / ROW objects to plain dicts.
 

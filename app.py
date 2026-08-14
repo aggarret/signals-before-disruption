@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Dict
+from typing import Dict, Optional
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
@@ -52,6 +52,7 @@ import dash_mantine_components as dmc
 from dash import Dash, dcc, html
 
 import queries
+import cloud_boot
 import data_manager
 from components import map_panel
 
@@ -99,6 +100,54 @@ if os.environ.get("GCS_BUCKET"):
     print("app: GCS_BUCKET set — skipping data_manager.ensure_fresh_data() (cloud mode)")
 else:
     data_manager.ensure_fresh_data()
+
+# ---------------------------------------------------------------------------
+# Cloud-mode freshness poll: the daily Cloud Run job republishes data to GCS,
+# but cloud_boot only mirrors it at cold start. A warm instance would otherwise
+# keep serving its boot-time dataset forever. This lets the serving process
+# detect a new publication (via UPDATE_LOG.md's GCS generation) and re-sync
+# without a redeploy. Driven by a dcc.Interval in the dashboard page.
+# ---------------------------------------------------------------------------
+_GCS_GEN: Optional[int] = None  # last-seen UPDATE_LOG.md generation
+
+
+def refresh_data_if_stale() -> Optional[str]:
+    """Poll GCS for a new dataset publication; re-sync if one is found.
+
+    Cloud-mode only (no-op without GCS_BUCKET). Returns the new
+    LATEST_DATA_DATE (str) when the dataset changed, else None. On the first
+    call after a cold start it just records the baseline generation (cloud_boot
+    already mirrored the current dataset at boot), so no redundant sync runs.
+    """
+    global LATEST_DATA_DATE, DEFAULT_DATE, TOTAL_ROWS, _GCS_GEN
+    bucket = os.environ.get("GCS_BUCKET")
+    if not bucket:
+        return None
+
+    gen = cloud_boot.get_update_generation(bucket)
+    if gen is None:
+        return None
+    if _GCS_GEN is None:
+        _GCS_GEN = gen  # baseline after boot sync
+        return None
+    if gen == _GCS_GEN:
+        return None
+
+    _GCS_GEN = gen
+    print(f"app: detected new GCS dataset (generation {gen}) — re-syncing")
+    cloud_boot.sync_from_gcs(bucket)
+    queries.invalidate_caches()
+
+    DEFAULT_DATE = str(map_panel.get_default_date(conn))
+    _latest = conn.execute(
+        f"SELECT MAX(observed_at) FROM read_parquet('{queries._EM_GLOB}')"
+    ).fetchone()[0]
+    LATEST_DATA_DATE = str(pd.Timestamp(_latest).date())
+    TOTAL_ROWS = sum(
+        int(queries._dataset_stats(conn, m)["total_rows"]) for m in _METRICS
+    )
+    print(f"app: re-sync complete — LATEST_DATA_DATE={LATEST_DATA_DATE}")
+    return LATEST_DATA_DATE
 
 # App-level store ids (mirrors of the panels' own controls / stores). Kept at
 # app level (as in the original single-page app) and imported by

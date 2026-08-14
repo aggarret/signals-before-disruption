@@ -53,6 +53,7 @@ from app import (
     _ID_STATION_STORE,
     _MANTINE_THEME,
     conn,
+    refresh_data_if_stale,
 )
 
 # The Dash app instance is not importable from app.py at module import time
@@ -98,6 +99,7 @@ def layout() -> dbc.Container:
             ),
             html.Span(
                 f"Today: {LATEST_DATA_DATE}",
+                id="latest-data-date",
                 style={"color": TEXT_FAINT, "fontSize": "12px",
                        "whiteSpace": "nowrap"},
             ),
@@ -119,6 +121,9 @@ def layout() -> dbc.Container:
             fluid=True,
             id="app-container",
             children=[
+                dcc.Interval(id="refresh-interval", interval=60_000),
+                dcc.Store(id="data-version", storage_type="memory",
+                          data={"date": LATEST_DATA_DATE}),
                 header,
 
                 # ---- global anomaly scorecards + monthly bar (above filter, -------
@@ -382,6 +387,18 @@ def register_integration_callbacks(app: Dash) -> int:
             conn=queries.get_connection(), entity_id=entity_id,
             metric=metric or DEFAULT_METRIC, date=date or DEFAULT_DATE,
         ))
+
+    # --- cloud freshness poll: re-sync + refresh the "Today" label ---------
+    @app.callback(
+        Output("latest-data-date", "children"),
+        Output("data-version", "data"),
+        Input("refresh-interval", "n_intervals"),
+    )
+    def _poll_refresh(_n: int):
+        new_date = refresh_data_if_stale()
+        if new_date is None:
+            return dash.no_update, dash.no_update
+        return f"Today: {new_date}", {"date": new_date}
 
     return len(_callbacks(app)) - base
 

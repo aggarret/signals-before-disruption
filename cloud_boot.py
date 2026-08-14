@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 from google.cloud import storage
 
@@ -72,22 +72,23 @@ def _iter_blob_names(bucket: storage.Bucket) -> Iterable[str]:
 def _fetch_blob(bucket: storage.Bucket, blob_name: str) -> bool:
     """Download one blob if changed; returns True when (re)downloaded."""
     dest = _blob_destination(blob_name)
-    remote_size = bucket.blob(blob_name).size  # may be None for empty blobs
+    blob = bucket.blob(blob_name)  # lazy handle — no network call yet
 
-    # Idempotent skip: existing local file with the same byte size is assumed
-    # to be the same published blob. (Sizes are authoritative from the bucket;
-    # a size mismatch triggers a fresh download.)
-    if os.path.isfile(dest) and remote_size is not None:
+    # Idempotent skip: if a local copy already exists, fetch the blob's real
+    # metadata (a single HEAD) and skip the download when the byte sizes match.
+    if os.path.isfile(dest):
         try:
-            if os.path.getsize(dest) == remote_size:
+            blob.reload()  # HEAD -> populates .size / .updated / .generation
+            remote_size = blob.size
+            if remote_size is not None and os.path.getsize(dest) == remote_size:
                 _log(f"skip (same size) {blob_name}")
                 return False
-        except OSError:
-            pass  # stat failed — just re-download
+        except Exception:
+            pass  # metadata fetch failed — fall through and re-download
 
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    bucket.blob(blob_name).download_to_filename(dest)
-    _log(f"downloaded {blob_name} -> {dest} (size={remote_size})")
+    blob.download_to_filename(dest)
+    _log(f"downloaded {blob_name} -> {dest} (size={blob.size})")
     return True
 
 
@@ -112,6 +113,26 @@ def sync_from_gcs(bucket_name: str) -> int:
             _log(f"WARNING: failed to fetch {blob_name}: {exc!r}")
             _log(f"continuing with remaining blobs; local data may be stale for {blob_name}")
     return count
+
+
+def get_update_generation(bucket_name: str) -> Optional[int]:
+    """Return the current GCS generation of UPDATE_LOG.md.
+
+    The daily update job rewrites UPDATE_LOG.md on every run, so its GCS
+    ``generation`` changes whenever a new dataset is published. This is the
+    cheap freshness signal the serving container polls (one HEAD request); it
+    is far lighter than listing or downloading the dataset.
+
+    Returns None when the marker is missing or on any transient error, so
+    callers can treat "no answer" as "nothing to do".
+    """
+    try:
+        client = storage.Client()  # ADC default credentials
+        blob = client.bucket(bucket_name).get_blob("UPDATE_LOG.md")
+        return blob.generation if blob is not None else None
+    except Exception as exc:
+        _log(f"WARNING: freshness check failed: {exc!r}")
+        return None
 
 
 def main() -> int:
