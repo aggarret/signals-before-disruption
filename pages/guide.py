@@ -215,7 +215,7 @@ def _general_body() -> List[Any]:
     )
 
     s_power = _section_card(
-        "Rivers & the power grid (the new page)",
+        "How do rivers talk to the power grid?",
         [
             _p(
                 "Here's the surprising part: a river can read the near-term "
