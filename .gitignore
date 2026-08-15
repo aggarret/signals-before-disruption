@@ -1,42 +1,38 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
+# ---- Heavy data & intermediates ----
+data/
+
+# ---- Hydro correlation: exclude heavy/intermediate/scratch, keep lightweight results/memos ----
+hydro_correlation/*.parquet
+hydro_correlation/research/
+hydro_correlation/_*.py
+hydro_correlation/_*.log
+hydro_correlation/build_gauge_geo.py
+hydro_correlation/run_correlation.py
+hydro_correlation/eia_locations.json
+!hydro_correlation/*.csv
+!hydro_correlation/*.md
+
+# ---- Local research briefs ----
+guide_research/
+
+# ---- Secrets (NEVER commit) ----
+*eia_key*
+*.token
+.env
+.env.*
+secrets*
+**/secrets*
+/tmp/
+/tmp/eia_key.txt
+
+# ---- Python / venv ----
 .venv/
-venv/
-env/
+__pycache__/
+*.pyc
+*.egg-info/
 
-# Data (too large for git, regenerable via pipeline)
-data/raw_cache/
-data/raw_observations/
-data/daily_entity_metrics/
-data/daily_category_metrics/
-data/seasonal_baselines.parquet
-data/backup/
-data/*.log
-data/UPDATE_LOG.md
-
-# Test artifacts
-_test_*.html
-*.test.py
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-
-# OpenClaw workspace files (personal, not project)
-handoff.md
-_guide_content.md
-
-# Temporary
-*.tmp
-*.bak
-_*.py
+# ---- Standalone scratch tooling / test artifacts (not part of the app) ----
+video_analyze.py
 _scratch/
-_test_*.png
-_test_*.html
+_guide_content.md
+_test_*

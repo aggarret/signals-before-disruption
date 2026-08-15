@@ -28,7 +28,7 @@ if _ROOT not in sys.path:
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import html
+from dash import Input, Output, html
 
 from app import LATEST_DATA_DATE, N_GAUGES, TOTAL_ROWS, conn  # noqa: E402
 
@@ -38,6 +38,10 @@ dash.register_page(
     name="Guide",
     title="River Personality Monitor — Guide",
 )
+
+# Audience toggle: Expert (current content) vs. General Audience (built by B1).
+_ID_AUDIENCE = "guide-audience-toggle"
+_ID_GUIDE_BODY = "guide-body-container"
 
 # ---------------------------------------------------------------------------
 # Palette (single source of truth for this page; mirrors assets/style.css)
@@ -63,6 +67,273 @@ Z_NO_DATA = "#334155"
 _BODY = {"color": TEXT, "fontSize": "14px", "lineHeight": "1.65"}
 _MUTED = {"color": MUTED, "fontSize": "13px", "lineHeight": "1.6"}
 _FAINT = {"color": FAINT, "fontSize": "12px"}
+
+
+# ---------------------------------------------------------------------------
+# Audience body builders
+# ---------------------------------------------------------------------------
+def _expert_body() -> List[Any]:
+    """The current (verbatim) guide sections, unchanged from the original page."""
+    return [
+        _purpose(),
+        _use_case(),
+        _expert_why_tight(),
+        _applications(),
+        _components_guide(),
+        _color_scale(),
+        _methodology(),
+        _stack(),
+        _gauge_network(),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# General-audience content (plain-language, question-driven) - B1
+# B0 wires this into the on-page Expert <-> General Audience toggle via
+# _general_body() + the expert cards. Reuse the same _section_card / _p /
+# _h6 / _bullet / _sub helpers and palette so it renders consistently.
+# ---------------------------------------------------------------------------
+def _gen_trust_note(text: str) -> html.Div:
+    """One-line "how we know" trust footnote (muted, small, italicized)."""
+    return _sub("\u2713 " + text, style={"marginTop": "10px", "fontStyle": "italic"})
+
+
+def _general_body() -> List[Any]:
+    """General-audience guide body: question -> answer -> why it matters.
+
+    Returns a non-empty list of Dash components (section cards) matching the
+    expert sections' component style. Each heading is a question a general
+    reader would actually ask. No formulas, no z-score / standard-deviation /
+    lag jargon - plain language, trust-facts, and three tested analogies.
+    """
+    s_what = _section_card(
+        "What is this dashboard?",
+        [
+            _p(
+                "It's a daily health check for 52 rivers across the United "
+                "States, all answering one question: is each river behaving "
+                "like itself today? Instead of just \u201chow high is the "
+                "water?\u201d, it asks the smarter question \u2014 \u201chow "
+                "unusual is this water, for this river, for this time of "
+                "year?\u201d"
+            ),
+            _p(
+                "Every number on the page is a comparison: today's river vs. "
+                "what that same river has normally done on this calendar day "
+                "for the past 20 years. A river can be high in absolute "
+                "terms but completely normal for its season \u2014 or it can "
+                "be quietly bizarre. This dashboard is built to tell the "
+                "difference at a glance."
+            ),
+        ],
+        icon="\U0001f30a",
+    )
+
+    s_why = _section_card(
+        "Why should I care?",
+        [
+            _p("Rivers touch almost every part of daily life. Here's why it "
+               "matters if one is behaving unusually:"),
+            _bullet("Water supply", "the rivers here feed reservoirs and "
+                    "drinking-water systems. An unusual signal now can mean "
+                    "a town's tap water is in trouble before the headlines "
+                    "are."),
+            _bullet("Flood heads-up", "a river running far above its own "
+                    "normal can be an early, concrete warning that a flood "
+                    "might be on the way."),
+            _bullet("Clean power", "flowing water spins the turbines that "
+                    "make hydroelectricity. When rivers run strong, the grid "
+                    "has more clean power; when they run low, it has less "
+                    "(more on this below)."),
+            _bullet("Recreation & outdoors", "fishing, rafting, boating, and "
+                    "river-lovers' days hinge on whether a river is at a "
+                    "normal level for the season."),
+            _p("In short: rivers quietly decide a lot about water, safety, "
+               "power, and fun \u2014 so knowing when one is off its own "
+               "normal is genuinely useful."),
+        ],
+        icon="\u2753",
+    )
+
+    s_colors = _section_card(
+        "What do the colors mean?",
+        [
+            _p(
+                "Think of the map like a traffic light for water. Every "
+                "gauge is colored by how far it is from its own normal for "
+                "the season \u2014 and we translate that into plain words:"
+            ),
+            _bullet("Blue / green", "close to normal \u2014 the river is "
+                    "behaving like itself for this time of year."),
+            _bullet("Orange / red", "unusually high \u2014 the river is "
+                    "carrying more water than it normally does on this date, "
+                    "from a bit high to extreme."),
+            _bullet("Brown", "unusually low \u2014 the river is running below "
+                    "its normal for this date, a possible drought signal."),
+            _p(
+                "That's the whole color story: green means \u201clooks "
+                "normal,\u201d red means \u201ccarrying a lot,\u201d brown "
+                "means \u201crunning dry-ish.\u201d The deeper the shade, the "
+                "more unusual. You never need to decipher a number to get "
+                "the picture."
+            ),
+        ],
+        icon="\U0001f6a6",
+    )
+
+    s_unusual = _section_card(
+        "What does \u201cunusual\u201d mean here?",
+        [
+            _p(
+                "Unusual always means: compared to that river's own 20-year "
+                "normal for this exact date. Each river is its own baseline. "
+                "A mountain creek can be low in absolute terms but totally "
+                "normal for early spring; a big river can be at a record "
+                "high that's still \u201cexpected\u201d in flood season. We "
+                "compare each river to itself, on the same calendar day, "
+                "across two decades of its own history."
+            ),
+            _h6("Think of your own body temperature"),
+            _p(
+                "98.6\u00b0 is \u201cnormal,\u201d but what's normal for you "
+                "depends on the season, the time of day, what you've been "
+                "doing. A river's \u201cnormal\u201d works the same way \u2014 "
+                "it changes with the calendar. So this dashboard doesn't ask "
+                "\u201cis the water high?\u201d It asks \u201cis this river "
+                "high for it, on this date, after decades of its own "
+                "history?\u201d That's the difference between a flood alarm "
+                "and a false alarm."
+            ),
+            _gen_trust_note(
+                "How we know: based on daily USGS streamflow records; "
+                "\u201cnormal\u201d = the middle range of that river's past "
+                "readings on the same calendar day, over a fixed "
+                "2004\u20132023 baseline."
+            ),
+        ],
+        icon="\U0001f321\ufe0f",
+    )
+
+    s_power = _section_card(
+        "Rivers & the power grid (the new page)",
+        [
+            _p(
+                "Here's the surprising part: a river can read the near-term "
+                "power picture. Dams turn flowing water into electricity "
+                "\u2014 more water (and a taller drop) means more power. So "
+                "a river is a live fuel gauge for the grid: when it runs "
+                "strong, there's more water to spin the turbines."
+            ),
+            _h6("14 rivers move in step with the region's hydro power"),
+            _p(
+                "Some rivers are like hydroelectric on/off switches; others "
+                "aren't. Hydro plants make power from water \u2014 roughly, "
+                "the more water flowing through a dam and the higher the "
+                "drop, the more electricity. So when a river runs higher or "
+                "lower than usual, its dams make more or less power in that "
+                "same month, and the two move together. That's why a few "
+                "gauges \u2014 mostly rivers feeding hydro-heavy grids like "
+                "the Pacific Northwest's Columbia system (BPA) or the TVA "
+                "dams of the Southeast \u2014 line up tightly with regional "
+                "hydro output. Others stay quiet because hydro is a small "
+                "slice of their grid's power, their dams store and release "
+                "on their own schedule, or the river is just one small "
+                "tributary among many, so its ups and downs get averaged "
+                "out."
+            ),
+            _h6("A dipstick, not a forecast"),
+            _p(
+                "The 14 rivers we track are like a dipstick \u2014 check them "
+                "and you get a rough read on near-term hydro power before "
+                "the monthly report lands. Not a weather forecast; more like "
+                "checking the gas tank."
+            ),
+            _h6("Real examples"),
+            _bullet("Columbia \u2192 BPA", "the Columbia at The Dalles, OR "
+                    "tracks Pacific Northwest hydro very tightly \u2014 a "
+                    "textbook case of a river feeding a hydro-heavy grid."),
+            _bullet("Southeast \u2192 TVA", "rivers feeding the Tennessee "
+                    "Valley Authority's dam system also move in step with "
+                    "that region's hydro output."),
+            _h6("Important: co-movement, not prediction"),
+            _p(
+                "These rivers and the region's hydro power rise and fall "
+                "together in the same month \u2014 because the same rainfall "
+                "drives both. They share a cause; the river is not "
+                "\u201ccausing\u201d a specific megawatt, and it doesn't "
+                "forecast next month. Think of it as two things moving in "
+                "the same current, not one telling the other what to do."
+            ),
+            _h6("Why some rivers stay quiet"),
+            _p(
+                "A dam upstream is like a sponge: it soaks up spring floods "
+                "and releases stored water steadily. That smooths a river's "
+                "ups and downs, so a gauge below a dam no longer shows the "
+                "true heartbeat of the watershed \u2014 it shows what the "
+                "operator chooses to release. That's a big reason only 14 of "
+                "our 52 rivers align tightly with hydro power; the rest have "
+                "their signal muffled."
+            ),
+        ],
+        icon="\u26a1",
+    )
+
+    s_cannot = _section_card(
+        "What can it NOT tell me?",
+        [
+            _p("Every tool has honest limits. Here's what this dashboard "
+               "does not claim to do:"),
+            _bullet("It doesn't predict the future", "the co-movement we "
+                    "show is a same-month link, not a forecast. A river "
+                    "moving with hydro today does not tell you next month's "
+                    "weather or power."),
+            _bullet("Storage dams smooth the signal", "below a big dam, the "
+                    "river reflects what an operator releases, not the raw "
+                    "weather pulse of the watershed \u2014 so some rivers "
+                    "look \u201ctoo calm\u201d for what's really happening "
+                    "upstream."),
+            _bullet("Monthly grain only", "we compare each month's water to "
+                    "that same month's power. Day-by-day, minute-by-minute "
+                    "movements are beyond this tool's scope."),
+            _bullet("It's about behavior, not absolute levels", "a river "
+                    "can be \u201cnormal\u201d yet still be high in plain "
+                    "terms \u2014 this dashboard measures "
+                    "unusual-for-this-river, not raw size."),
+            _p("Read the colors as a heads-up, and pair them with local "
+               "warnings and officials for big decisions. It's a fast, "
+               "trustworthy signal \u2014 not the final word."),
+        ],
+        icon="\U0001f6ab",
+    )
+
+    s_sources = _section_card(
+        "Where does this come from?",
+        [
+            _bullet("USGS", "river data \u2014 daily streamflow readings "
+                    "from U.S. Geological Survey gauges on these 52 "
+                    "rivers."),
+            _bullet("EIA", "power data \u2014 electricity generation and "
+                    "regional hydro output from the U.S. Energy Information "
+                    "Administration."),
+            _p(
+                "Numbers you can trust: live data from USGS gauges and EIA "
+                "reports, compared against each river's own 20-year "
+                "history. No guessing, no smoothed-over estimates \u2014 "
+                "named sources, named method, fixed period (2004\u20132023)."
+            ),
+            _gen_trust_note(
+                "Method, in one line: we matched each month's water to that "
+                "same month's power output and looked for rivers that rise "
+                "and fall together with their region's hydro."
+            ),
+        ],
+        icon="\U0001f5c2\ufe0f",
+    )
+
+    return [s_what, s_why, s_colors, s_unusual, s_power, s_cannot, s_sources]
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -406,9 +677,116 @@ def _use_case() -> dbc.Card:
                 "\u2018low for August\u2019 from \u2018low for March.\u2019"),
         _bullet("Data QA", "gap markers and the Data Health KPI distinguish "
                 "a sensor outage from a dry river."),
+        _bullet("Hydropower coupling", "the Hydro Coupling page ranks the 14 "
+                "tight-tier gauges where monthly streamflow tracks regional "
+                "hydro generation (Spearman |ρ| ≥ 0.5). A gauge that is both "
+                "extreme on this dashboard (|z| ≥ 2.5) and tight-coupled is "
+                "doubly meaningful — a flood/drought anomaly that also swings "
+                "generation. Example: the Columbia at The Dalles, OR (~0.86) "
+                "feeds Bonneville Power Administration directly, so the same "
+                "Morning Scan that flags an extreme event there also flags a "
+                "likely generation move."),
     ]
     return _section_card("Use Case: A Water Resources Manager\u2019s "
                          "Morning Scan", body, icon="\U0001f9ed")
+
+
+def _expert_why_tight() -> dbc.Card:
+    """Expert section (B2): why these 14 gauges couple to hydro generation.
+
+    Method-heavy companion to the Hydropower coupling bullet in the Use Case.
+    Uses the same helpers (_p / _h6 / _bullet / _sub) as the rest of the page.
+    """
+    body = [
+        _p(
+            "Coupling is the expected consequence of hydroelectric physics: "
+            "P = \u03c1\u00b7g\u00b7Q\u00b7H\u00b7\u03b7 \u2014 power equals water "
+            "density \u00d7 gravity \u00d7 flow (Q) \u00d7 head (H) \u00d7 "
+            "efficiency (\u03b7). To good approximation P \u2248 flow \u00d7 head, "
+            "so a wetter-than-normal river delivers more water and (often) more "
+            "head to the machines, and its dams generate more in the same "
+            "calendar month; a drier river generates less. That physical basis "
+            "is why 14 of the 52 gauges move with their region's hydro output. "
+            "Each gauge's Spearman anomaly correlation is computed against its "
+            "EIA region-aggregate HYC (hydroelectricity) series \u2014 a measure "
+            "of how much of that river's monthly flow variance survives, at lag-0, "
+            "into regional hydro generation."
+        ),
+        _h6("Why every tight gauge peaks at lag 0 (co-movement, not prediction)"),
+        _p(
+            "All 14 tight gauges peak at lag 0: flow anomaly and generation "
+            "anomaly rise and fall in the same calendar month. This is "
+            "co-movement, not a predictive lead \u2014 the series share a common "
+            "driver (the weather's effect on water), so neither forecasts the "
+            "other. Reservoirs shift timing by days-to-weeks, but at the monthly "
+            "grain that blur is absorbed into the same calendar month, so the "
+            "monthly signals still align at lag 0. Testing true daily dispatch "
+            "would require daily/BPA-hourly hydro data, which is out of scope "
+            "for these monthly inputs."
+        ),
+        _h6("Why some gauges are tight and others decoupled"),
+        _p(
+            "Three mechanisms decide whether a river shows up in its region's "
+            "hydro totals \u2014 and the tight bucket is deliberately mixed, not a "
+            "simple west-vs-east map (MD, NC, GA, PA\u00d73, CT, MO\u00d72, CA, "
+            "NE\u00d72, MN, OR):"
+        ),
+        _bullet("Regional hydro share",
+                "where hydro is a large slice of the mix, a big hydro-fed "
+                "river's swings move the region's aggregate output \u2192 tight; "
+                "where hydro is tiny, that flow variance is lost in gas/coal/"
+                "nuclear noise \u2192 decoupled. (Hydro is ~6% of U.S. "
+                "generation, with roughly half of installed capacity across "
+                "WA/OR/CA.)"),
+        _bullet("Reservoir / pumped-storage / regulated routing",
+                "dams store and dispatch water when economical, not when it "
+                "arrives, and pumped storage even consumes power \u2014 this "
+                "masks the flow signal and pushes a gauge toward decoupled "
+                "(e.g. regulated CA-11251000, \u03c1 0.085)."),
+        _bullet("Drainage-basin integration",
+                "a single-tributary gauge sees only its own variable, but the "
+                "region's fleet integrates many independently-weathered "
+                "tributaries, diluting any one gauge even in hydro regions "
+                "(e.g. WA-12010000 at 0.187)."),
+        _h6("Real anchors where coupling is verifiable"),
+        _bullet("Columbia \u2192 BPA (Pacific NW)",
+                "BPA markets power from 31 federal hydro dams on the Columbia "
+                "and tributaries; ~87% of sustained peak capacity is hydro \u2014 "
+                "the archetype of a hydro-dominated grid, hence a Columbia-at-"
+                "The-Dalles-style gauge coupling near \u03c1 \u2248 0.86."),
+        _bullet("Southeast \u2192 TVA",
+                "29 hydro dams + pumped storage, but hydro is only ~13% of "
+                "output (nuclear 41%, gas 26%, coal 14%) \u2014 material, not "
+                "dominant, so Southeast gauges couple well where rivers feed "
+                "the TVA fleet (NC 0.706, GA 0.622) but below the PNW."),
+        _bullet("Mid-Atlantic \u2192 PJM",
+                "a market dominated by gas/coal/nuclear with a small hydro "
+                "share, so PA/MD gauges couple only where the river is a "
+                "meaningful contributor (PA 0.619/0.555/0.500, MD 0.715)."),
+        _h6("Method caveats \u2014 read the tight/decoupled split carefully"),
+        _bullet("Region/state aggregate, not per-dam",
+                "correlation is at the EIA region/state AGGREGATE, not per dam. "
+                "\u201cTight\u201d thus means \u201ca meaningful hydro contributor "
+                "within its region,\u201d not a 1:1 match to any single dam."),
+        _bullet("Monthly grain only",
+                "these are monthly inputs; true daily dispatch is not being "
+                "claimed. A genuine daily test would need BPA hourly hydro for "
+                "the PNW, out of scope here."),
+        _bullet("Autocorrelation & effective N",
+                "strong autocorrelation in the HYC/flow series inflates naive "
+                "p-values; the top correlations survive a Bayley\u2013Hammersley "
+                "effective-N correction to p \u2248 1e-4\u20131e-15."),
+        _sub(
+            "Sources: USGS Hydroelectric Power: How it Works / Water Use "
+            "(usgs.gov); EIA \u2014 Where hydropower is generated (eia.gov); BPA \u2014 "
+            "Power Services (bpa.gov); TVA; PJM \u2014 Markets & Operations; "
+            "project data hydro_correlation/correlation_final.csv and "
+            "significance_memo.md.",
+            style={"marginTop": "10px"},
+        ),
+    ]
+    return _section_card("Why These 14 Gauges Couple to Hydro Generation",
+                         body, icon="\u26a1")
 
 def _applications() -> dbc.Card:
     body = [
@@ -800,7 +1178,7 @@ def _gauge_network() -> dbc.Card:
 # Page layout
 # ---------------------------------------------------------------------------
 def build_guide_layout() -> dbc.Container:
-    """The complete guide page: hero + eight section cards + footer."""
+    """The complete guide page: hero + audience toggle + guide body + footer."""
     footer = html.Div(
         f"Data: USGS Water Data OGC API · Baseline: 2004-2023 · "
         f"{N_GAUGES} gauges · {TOTAL_ROWS:,} rows",
@@ -812,19 +1190,67 @@ def build_guide_layout() -> dbc.Container:
         id="guide-container",
         children=[
             _hero(),
-            _purpose(),
-            _use_case(),
-            _applications(),
-            _components_guide(),
-            _color_scale(),
-            _methodology(),
-            _stack(),
-            _gauge_network(),
+            html.Div(
+                [
+                    html.Div("Choose how this guide explains things.",
+                             style=_MUTED),
+                    dbc.RadioItems(
+                        id=_ID_AUDIENCE,
+                        options=[
+                            {"label": "Expert (data nerds)",
+                             "value": "expert"},
+                            {"label": "General Audience",
+                             "value": "general"},
+                        ],
+                        value="expert",
+                        inline=True,
+                    ),
+                ],
+                style={"margin": "0 auto", "maxWidth": "900px",
+                       "padding": "6px 12px 18px", "textAlign": "center"},
+            ),
+            html.Div(id=_ID_GUIDE_BODY, children=[]),
             footer,
             html.Div(style={"height": "32px"}),
         ],
         style={"backgroundColor": BG},
     )
+
+
+# ---------------------------------------------------------------------------
+# Callbacks
+# ---------------------------------------------------------------------------
+app = dash.get_app()
+_REGISTERED = False
+
+
+def register_callbacks(app) -> int:
+    """Wire the audience toggle into the guide body container (idempotent)."""
+    global _REGISTERED
+    if _REGISTERED:
+        return 1
+    _REGISTERED = True
+
+    @app.callback(
+        Output(_ID_GUIDE_BODY, "children"),
+        Input(_ID_AUDIENCE, "value"),
+        prevent_initial_call=False,
+    )
+    def _on_audience(value):
+        body = _expert_body() if value == "expert" else _general_body()
+        # Wrap the section list in a single container component. A bare
+        # top-level Python list returned from a single-output `children`
+        # callback is ambiguous to Dash (it can read as a multi-output
+        # tuple and raise InvalidCallbackReturnValue in validate_multi_return
+        # depending on the request's `outputs` grouping). Returning one
+        # component keeps every section and always serializes as a single
+        # `children` value for the real renderer.
+        return html.Div(body)
+
+    return 1
+
+
+register_callbacks(app)
 
 
 def layout() -> dbc.Container:

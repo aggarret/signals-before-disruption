@@ -191,6 +191,11 @@ app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],
     assets_folder="assets",
+    # Panels (map, strip, small-multiples, drill-down) are rendered INTO their
+    # containers by callbacks, so their inner graph ids (hydro-map-graph,
+    # hydro-strip-graph, ...) are NOT present in the initial layout. Allow
+    # callbacks to reference those late-created components.
+    suppress_callback_exceptions=True,
 )
 server = app.server  # WSGI entry for gunicorn / Cloud Run
 
@@ -225,6 +230,7 @@ def _navbar() -> dbc.NavbarSimple:
     return dbc.NavbarSimple(
         children=[
             dbc.NavItem(dbc.NavLink("Dashboard", href="/", active="exact")),
+            dbc.NavItem(dbc.NavLink("Hydro Coupling", href="/hydro", active="exact")),
             dbc.NavItem(dbc.NavLink("Guide", href="/guide", active="exact")),
         ],
         brand="🌊 River Personality Monitor",

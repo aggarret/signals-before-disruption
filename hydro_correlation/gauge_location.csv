@@ -1,0 +1,53 @@
+entity_id,state,state_abbr,eia_location,eia_location_name,confidence
+USGS-01184000,Connecticut,CT,CT,Connecticut,high
+USGS-01358000,New York,NY,NY,New York,high
+USGS-01434000,Pennsylvania,PA,PA,Pennsylvania,high
+USGS-01536500,Pennsylvania,PA,PA,Pennsylvania,high
+USGS-01570500,Pennsylvania,PA,PA,Pennsylvania,high
+USGS-01578310,Maryland,MD,MD,Maryland,high
+USGS-01646500,Maryland,MD,MD,Maryland,high
+USGS-02047500,Virginia,VA,VA,Virginia,high
+USGS-02198500,Georgia,GA,GA,Georgia,high
+USGS-02231000,Florida,FL,FL,Florida,high
+USGS-02314500,Georgia,GA,GA,Georgia,high
+USGS-02358000,Florida,FL,FL,Florida,high
+USGS-02479000,Mississippi,MS,SAT,South Atlantic,low
+USGS-03161000,North Carolina,NC,NC,North Carolina,high
+USGS-03219500,Ohio,OH,OH,Ohio,high
+USGS-03294500,Kentucky,KY,KY,Kentucky,high
+USGS-03612000,Illinois,IL,IL,Illinois,high
+USGS-05331000,Minnesota,MN,MN,Minnesota,high
+USGS-05474000,Iowa,IA,IA,Iowa,high
+USGS-05587450,Illinois,IL,IL,Illinois,high
+USGS-06478500,South Dakota,SD,SD,South Dakota,high
+USGS-06486000,Nebraska,NE,NE,Nebraska,high
+USGS-06610000,Nebraska,NE,NE,Nebraska,high
+USGS-06800500,Nebraska,NE,NE,Nebraska,high
+USGS-06934500,Missouri,MO,MO,Missouri,high
+USGS-07010000,Missouri,MO,MO,Missouri,high
+USGS-07058000,Missouri,MO,MO,Missouri,high
+USGS-07338500,Oklahoma,OK,OK,Oklahoma,high
+USGS-08279500,New Mexico,NM,NM,New Mexico,high
+USGS-09070500,Colorado,CO,CO,Colorado,high
+USGS-09180500,Utah,UT,UT,Utah,high
+USGS-09315000,Utah,UT,UT,Utah,high
+USGS-09380000,Arizona,AZ,AZ,Arizona,high
+USGS-09510000,Arizona,AZ,AZ,Arizona,high
+USGS-09512500,Arizona,AZ,AZ,Arizona,high
+USGS-10109000,Utah,UT,UT,Utah,high
+USGS-10310000,California,CA,CA,California,high
+USGS-10338000,California,CA,CA,California,high
+USGS-10346000,California,CA,CA,California,high
+USGS-11251000,California,CA,CA,California,high
+USGS-11383500,California,CA,CA,California,high
+USGS-11425500,California,CA,CA,California,high
+USGS-11467000,California,CA,CA,California,high
+USGS-11478500,California,CA,CA,California,high
+USGS-11522500,California,CA,CA,California,high
+USGS-12010000,Washington,WA,WA,Washington,high
+USGS-12101500,Washington,WA,WA,Washington,high
+USGS-12113000,Washington,WA,WA,Washington,high
+USGS-12194000,Washington,WA,WA,Washington,high
+USGS-13269000,Idaho,ID,ID,Idaho,high
+USGS-13336500,Idaho,ID,ID,Idaho,high
+USGS-14105700,Oregon,OR,OR,Oregon,high
