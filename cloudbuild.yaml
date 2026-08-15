@@ -5,7 +5,7 @@ steps:
   args: ['push', 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA']
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
-  args: ['run', 'deploy', 'signals', '--image', 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA', '--region', 'us-central1', '--platform', 'managed', '--allow-unauthenticated', '--port', '8080', '--set-env-vars', 'GCS_BUCKET=signals-before-disruption-data,MODE=service']
+  args: ['run', 'deploy', 'signals', '--image', 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA', '--region', 'us-central1', '--platform', 'managed', '--allow-unauthenticated', '--port', '8080', '--set-env-vars', 'GCS_BUCKET=river-personality-monitor-data,MODE=service']
 images:
 - 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA'
 options:
