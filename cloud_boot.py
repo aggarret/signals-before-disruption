@@ -33,7 +33,15 @@ PREFIXES: List[str] = [
     "raw_observations/",
     "daily_entity_metrics/",
     "daily_category_metrics/",
+    "hydro_correlation/",
 ]
+
+# Per-prefix local destination root. Everything maps into DATA_DIR (./data)
+# unless listed here: hydro_correlation/* is read by hydro_queries.py from
+# ./hydro_correlation/ (outside ./data), so those blobs must land in ROOT.
+PREFIX_ROOTS: dict = {
+    "hydro_correlation/": ROOT,
+}
 
 # Top-level single blobs to sync into ./data/.
 BLOBS: List[str] = [
@@ -48,15 +56,16 @@ def _log(msg: str) -> None:
 
 
 def _blob_destination(blob_name: str) -> str:
-    """Map a GCS blob name to the local path under ./data/.
+    """Map a GCS blob name to the local path.
 
-    Prefixes map 1:1 (``raw_observations/...`` -> ``data/raw_observations/...``);
+    Prefixes map 1:1 (``raw_observations/...`` -> ``data/raw_observations/...``,
+    ``hydro_correlation/...`` -> ``hydro_correlation/...`` per PREFIX_ROOTS);
     top-level blobs (``seasonal_baselines.parquet``, ``stations.csv``,
     ``UPDATE_LOG.md``) land directly in ``data/``.
     """
     for prefix in PREFIXES:
         if blob_name.startswith(prefix):
-            return os.path.join(DATA_DIR, blob_name)
+            return os.path.join(PREFIX_ROOTS.get(prefix, DATA_DIR), blob_name)
     return os.path.join(DATA_DIR, os.path.basename(blob_name))
 
 
