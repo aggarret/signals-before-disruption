@@ -513,6 +513,15 @@ def get_hydrograph_data(
         .reset_index()
         .rename(columns={"index": "observed_at"})
     )
+    # Empty-input safety (production 500, signals:v6): when no rows matched
+    # (e.g. a gauge with no data in the requested window) the reindexed
+    # calendar only carries the merge columns. Restore the documented output
+    # schema instead of raising KeyError: missing days get null metrics and
+    # completeness_score = 0, as the docstring promises.
+    for _col in ("anomaly_score", "daily_change", "rise_rate_3d",
+                 "flow_percentile", "completeness_score"):
+        if _col not in out.columns:
+            out[_col] = 0.0 if _col == "completeness_score" else float("nan")
     out["completeness_score"] = out["completeness_score"].fillna(0.0)
 
     cols = ["observed_at", "average", "water_temp", "anomaly_score",
