@@ -97,14 +97,33 @@ STATION_NAMES: Dict[str, str] = dict(
 # Cloud Run (GCS_BUCKET set): the background safety-net update is disabled — a
 # separate Cloud Run job refreshes the data and writes back to GCS, and
 # cloud_boot.py already synced the current dataset into ./data/ at startup.
+_cloud_ready = True  # local mode (no GCS_BUCKET) never triggers the guard below
 if os.environ.get("GCS_BUCKET"):
     print("app: GCS_BUCKET set — skipping data_manager.ensure_fresh_data() (cloud mode)")
-    if not cloud_boot.wait_until_ready(conn):
-        print("app: WARNING — cloud boot readiness probe timed out; serving anyway")
-    else:
+    _cloud_ready = cloud_boot.wait_until_ready(conn)
+    if _cloud_ready:
         print("app: cloud boot readiness confirmed — data queryable")
+    else:
+        print("app: WARNING — cloud boot readiness probe timed out; serving anyway")
 else:
     data_manager.ensure_fresh_data()
+
+# Cloud-mode guard: fail loudly at startup instead of silently serving 500s when
+# GCS_BUCKET is set but the served dataset is not queryable AND there is no
+# local data fallback. Reuses cloud_boot.wait_until_ready() (probes the actual
+# dataset via DuckDB) as the availability signal; only flags when that probe
+# failed and ./data/ is empty. Never fires in local mode (GCS_BUCKET unset).
+if os.environ.get("GCS_BUCKET") and not _cloud_ready:
+    _data_dir = getattr(cloud_boot, "DATA_DIR", os.path.join(_ROOT, "data"))
+    _has_local_data = bool(
+        os.path.isdir(_data_dir)
+        and any(f for f in os.listdir(_data_dir) if not f.startswith("."))
+    )
+    if not _has_local_data:
+        raise RuntimeError(
+            "app: FATAL — GCS_BUCKET set but dataset not available locally and "
+            "GCS sync failed; check GCS_BUCKET + service account permissions"
+        )
 
 # ---------------------------------------------------------------------------
 # Cloud-mode freshness poll: the daily Cloud Run job republishes data to GCS,
