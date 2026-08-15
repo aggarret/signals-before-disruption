@@ -3,9 +3,12 @@ steps:
   args: ['build', '-t', 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA', '.']
 - name: 'gcr.io/cloud-builders/docker'
   args: ['push', 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA']
+# Deploy step: GRIDSTATUS_TOKEN comes from Secret Manager secret 'gridstatus-token'.
+# REQUIRED before first build: create the secret + IAM binding (see deploy plan),
+# otherwise this deploy step will FAIL because the secret does not exist yet.
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
-  args: ['run', 'deploy', 'signals', '--image', 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA', '--region', 'us-central1', '--platform', 'managed', '--allow-unauthenticated', '--port', '8080', '--set-env-vars', 'GCS_BUCKET=river-personality-monitor-data,MODE=service', '--no-traffic']
+  args: ['run', 'deploy', 'signals', '--image', 'us-central1-docker.pkg.dev/river-personality-monitor/dash-apps/signals:$SHORT_SHA', '--region', 'us-central1', '--platform', 'managed', '--allow-unauthenticated', '--port', '8080', '--set-env-vars', 'GCS_BUCKET=river-personality-monitor-data,MODE=service', '--set-secrets', 'GRIDSTATUS_TOKEN=projects/river-personality-monitor/secrets/gridstatus-token/versions/latest', '--no-traffic']
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
   args: ['run', 'services', 'update-traffic', 'signals', '--region', 'us-central1', '--to-latest']

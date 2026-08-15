@@ -28,6 +28,14 @@ Deploy:        gunicorn app:server       (WSGI entry for Cloud Run)
 
 from __future__ import annotations
 
+# Load local .env (dev only; gitignored) before any imports that read env vars.
+# In prod, GRIDSTATUS_TOKEN is injected by Cloud Run via Secret Manager.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 import os
 import sys
 import threading
