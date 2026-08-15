@@ -171,8 +171,8 @@ def _general_body() -> List[Any]:
             _bullet("Brown", "unusually low \u2014 the river is running below "
                     "its normal for this date, a possible drought signal."),
             _p(
-                "That's the whole color story: green means \u201clooks "
-                "normal,\u201d red means \u201ccarrying a lot,\u201d brown "
+                "That's the whole color story: teal means \u201clooks "
+                "normal,\u201d cyan/red means \u201ccarrying a lot,\u201d amber "
                 "means \u201crunning dry-ish.\u201d The deeper the shade, the "
                 "more unusual. You never need to decipher a number to get "
                 "the picture."
