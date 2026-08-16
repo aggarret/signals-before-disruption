@@ -62,6 +62,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import ingest_daily as ing          # API params, HTTP backoff, transform, stations
+import build_hydro                  # rebuilds hydro_correlation/ from LIVE sources (cloud mode; import-safe — parses argv only inside main())
 # NOTE: build_metrics.py / build_category_metrics.py are invoked as SUBPROCESSES
 # (see rebuild_metrics) — never imported, because build_metrics.py parses
 # sys.argv at import time, which would swallow update_data's own CLI flags.
@@ -393,6 +394,8 @@ def append_log(text: str) -> None:
 #       - data/seasonal_baselines.parquet
 #       - stations.csv
 #       - data/UPDATE_LOG.md
+#       - hydro_correlation/          (aligned_pairs.parquet, correlation_final.csv —
+#                                      rebuilt from live sources before each upload)
 #   * Each object is written in a single GCS upload, which is atomic per
 #     object — an inconsistent generation is never visible to readers.
 #   * Objects whose remote size AND md5 already match the local file are
@@ -427,6 +430,15 @@ def _collect_serving_files() -> list[Path]:
     for f in (SB_PATH, PROJECT_ROOT / "stations.csv", UPDATE_LOG):
         if f.is_file():
             files.append(f)
+    # hydro_correlation/ serving files (rebuilt by build_hydro.py before the
+    # upload). Blob names fall back to project-root-relative, so they land in
+    # gs://<bucket>/hydro_correlation/ — exactly the prefix cloud_boot.py maps
+    # back to ROOT.
+    hydro_dir = PROJECT_ROOT / "hydro_correlation"
+    for f in ("aligned_pairs.parquet", "correlation_final.csv"):
+        p = hydro_dir / f
+        if p.is_file():
+            files.append(p)
     return files
 
 
@@ -520,6 +532,66 @@ def upload_serving_artifacts(bucket_name: str, max_workers: int = 8,
         raise RuntimeError(f"GCS upload: {len(failures)} object(s) failed after "
                            f"{max_attempts} attempts")
     return {"uploaded": uploaded, "skipped": skipped}
+
+
+def _rebuild_hydro_serving_files() -> bool:
+    """Rebuild hydro_correlation/aligned_pairs.parquet + correlation_final.csv
+    from LIVE sources via build_hydro.main() (no --dry-run, so it atomically
+    rewrites the files in place).
+
+    Returns True on success. FAILURE ISOLATION: any exception or non-zero
+    return is logged as a WARNING and returns False — it never propagates, so
+    a hydro rebuild problem can never fail the job nor the upload of the
+    remaining artifacts (the USGS half must still succeed and upload on its
+    own).
+    """
+    try:
+        # build_hydro.main() parses sys.argv for its own flags; update_data's
+        # argv (e.g. --since) would make argparse exit 2. Swap in a clean argv
+        # for the duration of the call (we are single-threaded here) — same
+        # rationale as rebuild_metrics running argv-parsing builders as
+        # subprocesses.
+        saved_argv = sys.argv
+        sys.argv = ["build_hydro.py"]
+        try:
+            rc = build_hydro.main()
+        finally:
+            sys.argv = saved_argv
+        if rc != 0:
+            print(f"  WARNING: build_hydro.py exited {rc} — hydro serving files "
+                  "NOT refreshed; continuing without them.", flush=True)
+            return False
+        print("  Hydro rebuild OK: aligned_pairs.parquet + correlation_final.csv "
+              "refreshed.", flush=True)
+        return True
+    except SystemExit as exc:      # argparse/exit — treat as failure, keep going
+        print(f"  WARNING: build_hydro.py aborted (exit {exc.code}) — hydro "
+              "serving files NOT refreshed; continuing without them.", flush=True)
+        return False
+    except Exception as exc:
+        print(f"  WARNING: hydro rebuild failed ({type(exc).__name__}: {exc}) — "
+              "hydro serving files NOT refreshed; continuing without them.", flush=True)
+        return False
+
+
+def _upload_cloud_artifacts(bucket_name: str) -> bool:
+    """Rebuild hydro serving files, then push ALL serving artifacts to GCS.
+
+    Returns True on success; False only when the GCS upload itself failed
+    after retries (caller then exits non-zero so the Cloud Run job is marked
+    failed — local data is safe and GCS stays on the previous generation). A
+    hydro rebuild failure NEVER fails the upload or the job: it logs a
+    warning, the (previous) hydro files are still uploaded if present, and
+    everything else uploads normally.
+    """
+    _rebuild_hydro_serving_files()
+    print(f"\nCloud mode: uploading serving artifacts to gs://{bucket_name}/...", flush=True)
+    try:
+        upload_serving_artifacts(bucket_name)
+        return True
+    except Exception as exc:
+        print(f"ERROR: GCS upload failed: {exc}", flush=True)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +733,18 @@ def _run() -> int:
         ]
         print("\n".join(summary[-3:]), flush=True)
         append_log("\n".join(summary))
+        # Cloud mode: STILL rebuild + upload hydro on no-op days. Live grid
+        # sources (the independently refreshed EIA monthly file, the BPA
+        # gridstatus extension) can move even when USGS didn't, and the /hydro
+        # page should reflect the newest months/stats. Local mode (GCS_BUCKET
+        # unset) returns here exactly as before: nothing written, no upload,
+        # no hydro build.
+        gcs_bucket = os.environ.get("GCS_BUCKET")
+        if gcs_bucket:
+            print("\nCloud mode: USGS was a no-op; rebuilding + uploading hydro "
+                  "serving files only.", flush=True)
+            if not _upload_cloud_artifacts(gcs_bucket):
+                return 1
         return 0
 
     # ---- e. Backup before any change ---------------------------------------
@@ -719,14 +803,12 @@ def _run() -> int:
     # behavior stays byte-identical to before.
     gcs_bucket = os.environ.get("GCS_BUCKET")
     if gcs_bucket:
-        print(f"\nCloud mode: uploading serving artifacts to gs://{gcs_bucket}/...", flush=True)
-        try:
-            upload_serving_artifacts(gcs_bucket)
-        except Exception as exc:
-            print(f"ERROR: GCS upload failed: {exc}", flush=True)
+        print(f"\nCloud mode: rebuilding hydro_correlation from live sources...", flush=True)
+        if not _upload_cloud_artifacts(gcs_bucket):
             # Local data is already updated + rebuilt and remains usable; GCS
             # stays on the previous generation (safe). Exit non-zero so the
-            # Cloud Run job is marked failed.
+            # Cloud Run job is marked failed. (A hydro rebuild failure by
+            # itself never reaches here — see _rebuild_hydro_serving_files.)
             return 1
     return 0
 

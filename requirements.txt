@@ -8,6 +8,7 @@ duckdb==1.5.5
 requests==2.34.2
 pandas==2.3.3
 numpy==2.2.6
+scipy>=1.11
 
 # Dash frontend
 dash==4.4.1
