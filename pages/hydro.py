@@ -505,7 +505,10 @@ def _drill_data(gauge: str):
         return None, None, None
 
     # location-level hydro (aggregate across gauges mapped to this location)
-    hydro = pd.DataFrame()
+    # Guard: keep the expected columns even when empty so figure builders
+    # never KeyError on gauges outside the TIGHT set (e.g. stale selection,
+    # URL-crafted entity_id). Empty hydro -> gen series renders as NaN/flat.
+    hydro = pd.DataFrame(columns=["period", "generation_thousand_mwh"])
     if loc:
         e = hydro_queries.get_eia_hydro(eia_location=loc)
         if not e.empty:
