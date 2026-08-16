@@ -224,22 +224,26 @@ def get_bpa_monthly_from_gridstatus() -> pl.DataFrame | None:
     if daily is None or daily.empty:
         return None
 
-    # daily DataFrame: index = datetime, column = 'bpa_hydro_mw_daily' (mean MW)
-    # Convert daily mean MW → monthly thousand MWh:
-    #   monthly_thousand_mwh = Σ(daily_mw * 24h) / 1000
-    #                           = 24 * Σ(daily_mw) / 1000
-    #                           = 0.024 * Σ(daily_mw)
-    monthly = (
-        daily["bpa_hydro_mw_daily"]
-        .resample("ME")  # month-end frequency
-        .sum()           # sum of daily mean MW (not mean of means)
-        .mul(24.0)       # convert MWh
-        .div(1000.0)     # convert to thousand MWh
-        .dropna()
-    )
-    monthly.index = monthly.index.strftime("%Y-%m")
-    monthly.name = "generation_thousand_mwh"
-    return pl.from_pandas(monthly.reset_index())
+    # daily DataFrame: index = datetime (tz-aware, named e.g. 'Interval Start'),
+    # column = 'bpa_hydro_mw_daily' (mean MW). gridstatus's get_grid_monitor
+    # fetches ALL available hourly data, which includes the IN-PROGRESS current
+    # month — a partial month must never be treated as a monthly total.
+    grp = daily["bpa_hydro_mw_daily"].resample("ME")  # month-end frequency
+    monthly = grp.sum().mul(24.0).div(1000.0)  # Σ(daily mean MW) × 24h / 1000
+    n_days = grp.count()
+
+    out = pd.DataFrame({
+        "period": monthly.index.strftime("%Y-%m"),
+        "generation_thousand_mwh": monthly.to_numpy(),
+        "n_days": n_days.to_numpy(),
+    })
+    # Completeness gate: keep only months with ~full daily coverage (≥25 days).
+    # This drops the partial current month and any month with big data gaps.
+    out = out[out["n_days"] >= 25].drop(columns=["n_days"])
+    out = out[out["generation_thousand_mwh"].notna()]
+    if out.empty:
+        return None
+    return pl.from_pandas(out.reset_index(drop=True))
 
 
 def extend_generation(
