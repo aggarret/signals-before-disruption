@@ -140,7 +140,25 @@ if os.environ.get("GCS_BUCKET") and not _cloud_ready:
 # detect a new publication (via UPDATE_LOG.md's GCS generation) and re-sync
 # without a redeploy. Driven by a dcc.Interval in the dashboard page.
 # ---------------------------------------------------------------------------
-_GCS_GEN: Optional[int] = None  # last-seen UPDATE_LOG.md generation
+def _capture_baseline_generation() -> Optional[int]:
+    """Capture the GCS UPDATE_LOG.md generation at cold start.
+
+    cloud_boot.py has already mirrored the current dataset into ./data/ by
+    the time this runs, so the generation we see NOW is the canonical
+    baseline. Recording it here (instead of on the first browser poll) means
+    a daily job that publishes *after* boot is correctly detected as "new" by
+    refresh_data_if_stale — otherwise a warm instance would treat the next
+    publication as the baseline and serve its boot-time dataset forever.
+    """
+    bucket = os.environ.get("GCS_BUCKET")
+    if not bucket:
+        return None
+    gen = cloud_boot.get_update_generation(bucket)
+    print(f"app: GCS generation baseline captured at boot: {gen}")
+    return gen
+
+
+_GCS_GEN: Optional[int] = _capture_baseline_generation()  # baseline = generation at cold start
 _REFRESH_LOCK = threading.Lock()  # prevents overlapping concurrent GCS re-syncs
 
 
@@ -148,9 +166,9 @@ def refresh_data_if_stale() -> Optional[str]:
     """Poll GCS for a new dataset publication; re-sync if one is found.
 
     Cloud-mode only (no-op without GCS_BUCKET). Returns the new
-    LATEST_DATA_DATE (str) when the dataset changed, else None. On the first
-    call after a cold start it just records the baseline generation (cloud_boot
-    already mirrored the current dataset at boot), so no redundant sync runs.
+    LATEST_DATA_DATE (str) when the dataset changed, else None. The baseline
+    generation is captured at cold start (see _capture_baseline_generation), so
+    this only triggers a re-sync when a NEW publication appears after boot.
     """
     global LATEST_DATA_DATE, DEFAULT_DATE, TOTAL_ROWS, _GCS_GEN
     bucket = os.environ.get("GCS_BUCKET")
@@ -159,9 +177,6 @@ def refresh_data_if_stale() -> Optional[str]:
 
     gen = cloud_boot.get_update_generation(bucket)
     if gen is None:
-        return None
-    if _GCS_GEN is None:
-        _GCS_GEN = gen  # baseline after boot sync
         return None
     if gen == _GCS_GEN:
         return None
