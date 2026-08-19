@@ -11,9 +11,9 @@ Static page — no callbacks, no Dash state. Colors match assets/style.css
 #334155) and the anomaly palette used across the dashboard (amber / amber-teal
 / teal / teal-cyan / cyan / crimson).
 
-Startup facts (conn, N_GAUGES, TOTAL_ROWS, LATEST_DATA_DATE) are imported from
-app.py — safe because those names are defined above app.py's `app = Dash(...)`
-line, which is when Dash imports this page.
+Startup facts (conn, N_GAUGES, current_latest_date, current_total_rows) are
+imported from app.py — safe because those names are defined above app.py's
+`app = Dash(...)` line, which is when Dash imports this page.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, html
 
-from app import LATEST_DATA_DATE, N_GAUGES, TOTAL_ROWS, conn  # noqa: E402
+from app import N_GAUGES, conn, current_latest_date, current_total_rows  # noqa: E402
 
 dash.register_page(
     __name__,
@@ -1075,8 +1075,8 @@ def _methodology() -> dbc.Card:
                 "serving — caches are therefore safe (LRU date-slice cache of "
                 "8, per-metric dataset stats, per-gauge historical maxima), and "
                 "every callback runs on its own cheap read-only connection."),
-        _sub(f"Data range in this build: 2004 through {LATEST_DATA_DATE} · "
-             f"{TOTAL_ROWS:,} total rows across all metrics.",
+        _sub(f"Data range in this build: 2004 through {current_latest_date()} · "
+             f"{current_total_rows():,} total rows across all metrics.",
              style={"marginTop": "10px"}),
     ]
     return _section_card("Data Sources & Methodology", body, icon="🗄️")
@@ -1181,7 +1181,7 @@ def build_guide_layout() -> dbc.Container:
     """The complete guide page: hero + audience toggle + guide body + footer."""
     footer = html.Div(
         f"Data: USGS Water Data OGC API · Baseline: 2004-2023 · "
-        f"{N_GAUGES} gauges · {TOTAL_ROWS:,} rows",
+        f"{N_GAUGES} gauges · {current_total_rows():,} rows",
         className="footer",
     )
 

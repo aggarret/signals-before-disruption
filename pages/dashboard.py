@@ -30,18 +30,14 @@ from typing import Any, Optional
 import dash
 import dash_bootstrap_components as dbc
 import dash_mantine_components as dmc
-from dash import Dash, Input, Output, dcc, html
+from dash import Dash, Input, Output, State, dcc, html
 
 import queries
 from app import (
-    DEFAULT_DATE,
     DEFAULT_METRIC,
-    LATEST_DATA_DATE,
     N_GAUGES,
-    STATION_NAMES,
     TEXT_FAINT,
     TEXT_MUTED,
-    TOTAL_ROWS,
     _ID_DATE_STORE,
     _ID_DRAWER_CONTAINER,
     _ID_KPI_CONTAINER,
@@ -53,6 +49,9 @@ from app import (
     _ID_STATION_STORE,
     _MANTINE_THEME,
     conn,
+    current_default_date,
+    current_latest_date,
+    current_total_rows,
     refresh_data_if_stale,
 )
 
@@ -80,7 +79,9 @@ dash.register_page(__name__, path="/", name="Dashboard",
 def layout() -> dbc.Container:
     """The full page: header, stores, KPI row, map + right rail, hydrograph,
     personality cards, raw drawer, footer, and the drawer toggle button."""
-    metric, date = DEFAULT_METRIC, DEFAULT_DATE
+    metric = DEFAULT_METRIC
+    date = current_default_date()
+    latest = current_latest_date()
 
     header = html.Div(
         [
@@ -98,7 +99,7 @@ def layout() -> dbc.Container:
                        "flex": "1 1 auto"},
             ),
             html.Span(
-                f"Today: {LATEST_DATA_DATE}",
+                f"Today: {latest}",
                 id="latest-data-date",
                 style={"color": TEXT_FAINT, "fontSize": "12px",
                        "whiteSpace": "nowrap"},
@@ -111,7 +112,7 @@ def layout() -> dbc.Container:
 
     footer = html.Div(
         f"Data: USGS Water Data OGC API · Baseline: 2004-2023 · "
-        f"{N_GAUGES} gauges · {TOTAL_ROWS:,} rows",
+        f"{N_GAUGES} gauges · {current_total_rows():,} rows",
         className="footer",
     )
 
@@ -123,12 +124,15 @@ def layout() -> dbc.Container:
             children=[
                 dcc.Interval(id="refresh-interval", interval=60_000),
                 dcc.Store(id="data-version", storage_type="memory",
-                          data={"date": LATEST_DATA_DATE}),
+                          data={"date": latest, "default": date}),
                 header,
 
                 # ---- global anomaly scorecards + monthly bar (above filter, -------
                 # ---- NOT affected by the metric/date sticky filter) ---------------
-                anomaly_scorecards.render_anomaly_scorecards(conn=conn),
+                html.Div(
+                    id="anomaly-scorecards-container",
+                    children=anomaly_scorecards.render_anomaly_scorecards(conn=conn),
+                ),
 
                 # ---- sticky filter bar: metric + date (stay visible on scroll) --
                 # dmc.DatePickerInput opens to a decade/year/month drill-down so
@@ -302,7 +306,7 @@ def register_integration_callbacks(app: Dash) -> int:
         prevent_initial_call=True,
     )
     def _mirror_date(value: Optional[str]) -> str:
-        return maybe_wrap(value or DEFAULT_DATE)
+        return maybe_wrap(value or current_default_date())
 
     @app.callback(
         Output(_ID_STATION_STORE, "data"),
@@ -341,7 +345,7 @@ def register_integration_callbacks(app: Dash) -> int:
     def _render_kpis(metric: Optional[str], date: Optional[str]):
         return maybe_wrap(kpi_cards.render_kpi_cards(
             conn=queries.get_connection(),
-            metric=metric or DEFAULT_METRIC, date=date or DEFAULT_DATE,
+            metric=metric or DEFAULT_METRIC, date=date or current_default_date(),
         ))
 
     @app.callback(
@@ -355,7 +359,7 @@ def register_integration_callbacks(app: Dash) -> int:
         # clears the fastest-risers drill-down (correct for a new metric/date).
         return maybe_wrap(region_table.render_region_table(
             conn=queries.get_connection(),
-            metric=metric or DEFAULT_METRIC, date=date or DEFAULT_DATE,
+            metric=metric or DEFAULT_METRIC, date=date or current_default_date(),
         ))
 
     @app.callback(
@@ -369,7 +373,7 @@ def register_integration_callbacks(app: Dash) -> int:
                             date: Optional[str]):
         return maybe_wrap(personality_cards.render_personality_cards(
             conn=queries.get_connection(), entity_id=entity_id,
-            metric=metric or DEFAULT_METRIC, date=date or DEFAULT_DATE,
+            metric=metric or DEFAULT_METRIC, date=date or current_default_date(),
         ))
 
     @app.callback(
@@ -385,20 +389,58 @@ def register_integration_callbacks(app: Dash) -> int:
         # toggle re-opens it against the new selection.
         return maybe_wrap(raw_drawer.render_raw_drawer(
             conn=queries.get_connection(), entity_id=entity_id,
-            metric=metric or DEFAULT_METRIC, date=date or DEFAULT_DATE,
+            metric=metric or DEFAULT_METRIC, date=date or current_default_date(),
         ))
 
-    # --- cloud freshness poll: re-sync + refresh the "Today" label ---------
+    # --- cloud freshness poll: re-sync + push the new default date ---------
+    # The date picker is the fan-out: map / risers listen to it, and the
+    # date-store mirror then rebuilds KPIs / region / personality / hydrograph.
+    # A tab that loaded before a redeploy is healed only if it is still sitting
+    # on the previous "today" — a user browsing history is left alone.
     @app.callback(
         Output("latest-data-date", "children"),
         Output("data-version", "data"),
+        Output(map_panel._ID_DATE, "value"),
+        Output(map_panel._ID_DATE, "maxDate"),
+        Output("anomaly-scorecards-container", "children"),
         Input("refresh-interval", "n_intervals"),
+        State(map_panel._ID_DATE, "value"),
+        State("data-version", "data"),
     )
-    def _poll_refresh(_n: int):
-        new_date = refresh_data_if_stale()
-        if new_date is None:
-            return dash.no_update, dash.no_update
-        return f"Today: {new_date}", {"date": new_date}
+    def _poll_refresh(_n: int, picker_value: Optional[str], version: Any):
+        published = refresh_data_if_stale()
+        view_date = current_default_date()
+        latest = current_latest_date()
+        version = version if isinstance(version, dict) else {}
+        client_latest = str(version.get("date") or "")[:10]
+        client_default = str(version.get("default") or client_latest)[:10]
+        picker = str(picker_value)[:10] if picker_value else ""
+        following_tip = (
+            not picker
+            or picker == client_latest
+            or picker == client_default
+            or picker == view_date
+        )
+        picker_behind = bool(view_date and picker and picker < view_date)
+        client_stale = bool(latest and client_latest and client_latest != latest)
+
+        if published is None and not client_stale and not (following_tip and picker_behind):
+            return (dash.no_update, dash.no_update, dash.no_update,
+                    dash.no_update, dash.no_update)
+
+        picker_out = view_date if following_tip else dash.no_update
+        scorecards = dash.no_update
+        if published or client_stale:
+            scorecards = anomaly_scorecards.render_anomaly_scorecards(
+                conn=queries.get_connection()
+            )
+        return (
+            f"Today: {latest}",
+            {"date": latest, "default": view_date},
+            picker_out,
+            view_date,
+            scorecards,
+        )
 
     return len(_callbacks(app)) - base
 

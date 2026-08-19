@@ -201,6 +201,21 @@ def refresh_data_if_stale() -> Optional[str]:
     finally:
         _REFRESH_LOCK.release()
 
+
+def current_latest_date() -> str:
+    """Latest observed date in the currently served dataset (live, not import-time)."""
+    return LATEST_DATA_DATE
+
+
+def current_default_date() -> str:
+    """Map/KPI default date for the currently served dataset (live, not import-time)."""
+    return DEFAULT_DATE
+
+
+def current_total_rows() -> int:
+    """Row count across metrics for the currently served dataset (live, not import-time)."""
+    return TOTAL_ROWS
+
 # App-level store ids (mirrors of the panels' own controls / stores). Kept at
 # app level (as in the original single-page app) and imported by
 # pages/dashboard.py.
