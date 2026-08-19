@@ -410,7 +410,7 @@ def build_hydrograph_figure(
         plot_bgcolor=PAPER_BG,          # plot area is the darker slate
         font=dict(color=TEXT_MUTED, family="Inter, -apple-system, Segoe UI, sans-serif",
                   size=11),
-        margin=dict(l=8, r=8, t=8, b=8),
+        margin=dict(l=72, r=64, t=16, b=56),
         height=520,
         hovermode="x unified",
         hoverlabel=dict(bgcolor=CARD_BG, font_color=TEXT_BRIGHT,
@@ -421,15 +421,51 @@ def build_hydrograph_figure(
         uirevision="hydrograph-panel",
         bargap=0.15,
     )
-    fig.update_xaxes(gridcolor=BORDER, zeroline=False)
-    fig.update_yaxes(gridcolor=BORDER, zeroline=False)
-    fig.update_yaxes(title_text=f"{label} ({unit})".strip(), row=1, col=1,
-                     secondary_y=False)
+    fig.update_xaxes(
+        gridcolor=BORDER,
+        zeroline=False,
+        automargin=True,
+    )
+    fig.update_yaxes(
+        gridcolor=BORDER,
+        zeroline=False,
+        automargin=True,
+        exponentformat="none",
+        showexponent="none",
+        separatethousands=True,
+    )
+
+    y_tickformat = ",.1f" if metric == "water_temperature" else ",.0f"
+
+    fig.update_yaxes(
+        title_text=f"{label} ({unit})".strip(),
+        title_standoff=14,
+        tickformat=y_tickformat,
+        nticks=6,
+        row=1,
+        col=1,
+        secondary_y=False,
+    )
     if metric != "water_temperature":
-        fig.update_yaxes(title_text="Water temp (°C)", row=1, col=1,
-                         secondary_y=True, showgrid=False)
-    fig.update_yaxes(title_text=f"3-day rise ({unit}/day)".strip(), row=2, col=1,
-                     secondary_y=False)
+        fig.update_yaxes(
+            title_text="Water temp (°C)",
+            title_standoff=14,
+            tickformat=",.1f",
+            nticks=6,
+            row=1,
+            col=1,
+            secondary_y=True,
+            showgrid=False,
+        )
+    fig.update_yaxes(
+        title_text=f"3-day rise ({unit}/day)".strip(),
+        title_standoff=14,
+        tickformat=y_tickformat,
+        nticks=5,
+        row=2,
+        col=1,
+        secondary_y=False,
+    )
 
     # adaptive date ticks: daily -> monthly -> yearly
     span_days = (end - start).days
@@ -439,7 +475,15 @@ def build_hydrograph_figure(
         tfmt, dtick = "%b %Y", "M1"
     else:
         tfmt, dtick = "%Y", "M12"
-    fig.update_xaxes(tickformat=tfmt, dtick=dtick, row=2, col=1)
+    fig.update_xaxes(
+        tickformat=tfmt,
+        dtick=dtick,
+        tickangle=-45,
+        ticks="outside",
+        nticks=8,
+        row=2,
+        col=1,
+    )
     # ISO date strings (not pandas Timestamps) so the spec survives any JSON
     # serializer (kaleido's orjson rejects Timestamp). Shared axis drives both.
     fig.update_xaxes(range=[str(start.date()), str(end.date())], row=2, col=1)
@@ -469,7 +513,7 @@ def _empty_figure() -> go.Figure:
         plot_bgcolor=PAPER_BG,
         font=dict(color=TEXT_MUTED, family="Inter, -apple-system, Segoe UI, sans-serif",
                   size=11),
-        margin=dict(l=8, r=8, t=8, b=8),
+        margin=dict(l=72, r=64, t=16, b=56),
         height=520,
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),
