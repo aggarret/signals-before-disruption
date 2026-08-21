@@ -92,9 +92,9 @@ def build_category_metrics(today: date | None = None) -> pl.DataFrame:
         daily.join(stations.lazy(), on="entity_id", how="left")
         .group_by(["observed_at", "region", "metric"])
         .agg(
-            entity_count=(
-                pl.col("completeness_score").gt(0).sum().cast(pl.Int32)
-            ),
+            # Count every gauge that has a row for the day — this matches
+            # the map, which renders all rows (offline gauges as grey dots).
+            entity_count=pl.len().cast(pl.Int32),
             event_count=(
                 pl.col("anomaly_score").abs().ge(2.5).sum().cast(pl.Int32)
             ),

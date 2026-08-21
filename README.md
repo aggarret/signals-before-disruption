@@ -47,6 +47,22 @@ When the app starts and data hasn't been updated since 7 AM today, `data_manager
 ### Atomic Writes
 All parquet writes in `update_data.py`, `build_metrics.py`, and `build_category_metrics.py` use temp-file + `os.replace()` for atomic replacement. The app never reads a partially-written file during updates.
 
+### Hydro Coupling Data Refresh
+
+The Hydro Coupling page (`/hydro`) operates on a **monthly grain** (monthly mean streamflow × monthly hydro generation). Two data sources feed this page, each with a different refresh cadence:
+
+| Source | Coverage | Lag | Notes |
+|---|---|---|---|
+| **EIA HYC monthly** | All 52 gauges (base layer) | ~2–3 months | EIA publishes monthly hydro generation data in arrears. As of Aug 2026, the latest EIA month is May 2026. |
+| **BPA daily via GridStatus** | 7 PNW gauges (BPA footprint) | ~1 month | Near-real-time daily BPA hydro data, resampled to monthly. Current month excluded (≥25-day completeness gate). |
+
+**What to expect:**
+- **BPA gauges** (7 of 14 tight): data extends through the previous month. August data appears in early September.
+- **Non-BPA gauges** (45 of 52): data extends through the last EIA-published month (~2–3 months behind real time).
+- **Freshness sync**: in Cloud Run, a 60-second poll checks GCS `UPDATE_LOG.md` generation. When the daily job publishes new data, the serving container re-syncs and invalidates both Dashboard and Hydro Coupling query caches — no redeploy needed.
+
+This monthly lag is inherent to the correlation methodology: a full month of both streamflow and generation is needed for a meaningful monthly data point.
+
 ## Cloud Run Deployment
 
 The app is deployed on Google Cloud Run with parquet data served from Google Cloud Storage (not baked into the image).

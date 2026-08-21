@@ -80,9 +80,11 @@ def _expert_body() -> List[Any]:
         _expert_why_tight(),
         _applications(),
         _components_guide(),
+        _hydro_components_guide(),
         _color_scale(),
         _methodology(),
         _stack(),
+        _data_refresh(),
         _gauge_network(),
     ]
 
@@ -96,6 +98,274 @@ def _expert_body() -> List[Any]:
 def _gen_trust_note(text: str) -> html.Div:
     """One-line "how we know" trust footnote (muted, small, italicized)."""
     return _sub("\u2713 " + text, style={"marginTop": "10px", "fontStyle": "italic"})
+
+
+def _gen_hydro_components() -> dbc.Card:
+    """Plain-language tour of the 5 Hydro Coupling panels (top-to-bottom).
+
+    General-audience companion to the Hydro Coupling page (`/hydro`). Covers
+    the 14 tight gauges whose streamflow moves in step with regional hydro
+    power, panel by panel. No jargon — entries stay conversational. Each
+    panel gets an `_h6` name plus what it is / shows, how to use it, and
+    what to look for.
+    """
+    body = [
+        _p(
+            "This page keeps an eye on 14 rivers whose monthly water flow "
+            "tends to move in step with the electricity their region "
+            "generates from water. Here's a top-to-bottom tour of the five "
+            "panels you'll see, in the order they appear on the page."
+        ),
+        _h6("1. The Coupling Map"),
+        _p(
+            "What it is: a map of the whole river network, with the 14 "
+            "stand-out rivers drawn as colorful dots and the rest of the "
+            "field shown faded in the background for context."
+        ),
+        _p(
+            "What it shows: the teal dots are the 14 rivers this page "
+            "tracks. Bigger and darker-teal dots mean that river's flow "
+            "keeps step with its region's hydro power more tightly; lighter, "
+            "smaller dots are still linked, just less strongly."
+        ),
+        _p(
+            "How to use it: click any teal dot to select that river. The "
+            "strip chart, the waveform grid, and the drill-down below all "
+            "update to the river you picked, and a white ring marks your "
+            "choice."
+        ),
+        _p(
+            "What to look for: where the deep-teal (strongly linked) dots "
+            "cluster — often in hydro-heavy regions like the Pacific "
+            "Northwest or the Southeast."
+        ),
+        _h6("2. The Ranked Coupling Strip"),
+        _p(
+            "What it is: a simple top-to-bottom list of the same 14 rivers, "
+            "ranked by how tightly each one's flow moves with its region's "
+            "hydro power."
+        ),
+        _p(
+            "What it shows: the river at the top is the tightest match, and "
+            "the one at the bottom is the loosest of the 14. The bar length "
+            "and its teal shade both reflect the strength of the link."
+        ),
+        _p(
+            "How to use it: click a bar to select that river — handy when "
+            "you'd rather work from a sorted list than hunt on a map."
+        ),
+        _p(
+            "What to look for: the anchors near the top — like the "
+            "Columbia feeding a major Northwest grid — and which rivers "
+            "are the strongest of the fourteen."
+        ),
+        _h6("3. The Waveform Grid"),
+        _p(
+            "What it is: a 4×4 grid of small line charts, one per tracked "
+            "river, showing how the river's flow and the region's hydro "
+            "output have moved together over time."
+        ),
+        _p(
+            "What it shows: in each tiny chart, the teal line is the river's "
+            "flow and the amber line is the region's hydro power, both "
+            "reshaped so big rivers and small rivers are on the same scale. "
+            "Where the two lines ride together, that river is a visibly good "
+            "match."
+        ),
+        _p(
+            "How to use it: this is the \"all 14 at a glance\" panel — "
+            "read across the grid to see which rivers stay quiet and which "
+            "bounce in time with their power."
+        ),
+        _p(
+            "What to look for: the small charts where the teal line and the "
+            "amber line hug each other — those are the tightly coupled "
+            "rivers. Where the two wander apart, the river is less of a "
+            "hydro tell."
+        ),
+        _h6("4. The Drill-Down"),
+        _p(
+            "What it is: a deep-dive into whichever river you've selected, "
+            "with two views you can flip between."
+        ),
+        _p(
+            "The overlay view: this river's teal flow and the region's "
+            "amber hydro power on the same chart, with a soft green shading "
+            "wherever the two move in the same direction — a quick check of "
+            "whether they are moving together."
+        ),
+        _p(
+            "The next-month view: each point is one month's flow plotted "
+            "against the following month's hydro power, with a trend line, "
+            "so you can ask whether a watery month tends to lead toward a "
+            "stronger-power month that follows."
+        ),
+        _p(
+            "How to use it: pick a river from the map or list, then flip "
+            "between the two views. The title bar shows the river's name so "
+            "you always know whose drill-down you're in."
+        ),
+        _p(
+            "What to look for: the shaded sweeps in the overlay where teal "
+            "and amber rise and fall together, and whether the next-month "
+            "scatter forms a clear upward-sloping line."
+        ),
+        _h6("5. The Daily-Power Note"),
+        _p(
+            "What it is: a small note near the bottom explaining that, for "
+            "a handful of rivers served by the Bonneville Power "
+            "Administration (BPA), the power data is enriched with near- "
+            "daily readings from BPA on top of the usual monthly reports."
+        ),
+        _p(
+            "What to look for: this note tells you which rivers run on the "
+            "fresher daily track and which still rely on the monthly "
+            "report — so you can tell how current each river's numbers "
+            "really are."
+        ),
+    ]
+    return _section_card(
+        "What's on the Hydro Coupling page? \u2014 A guided tour",
+        body,
+        icon="\U0001f4a7",
+    )
+
+
+def _gen_dashboard_components() -> dbc.Card:
+    """Plain-language tour of the 9 Dashboard panels (top-to-bottom, left-
+    to-right). Mirrors _gen_hydro_components(): each panel gets an `_h6`
+    name plus what it is / what it shows, how to use it, and what to look
+    for. No jargon — entries stay conversational.
+    """
+    body = [
+        _p(
+            "Here's a top-to-bottom tour of the Dashboard page, in the "
+            "order the panels actually appear on screen — so the first "
+            "time you open it, nothing feels like a mystery."
+        ),
+        _h6("1. The Anomaly Scorecards"),
+        _p("What it is: a “greatest hits” panel of the most extreme days on "
+           "record, ranked from #1 down."),
+        _p("What it shows: the single most unusual day in the whole 20-year "
+           "dataset, up front — plus, on hover, the next nine most extreme "
+           "days — each with a count of how many rivers were acting "
+           "strangely that day at once."),
+        _p("How to use it: hover over the top card to expand the top-10 list "
+           "— it's always live and doesn't depend on your filters."),
+        _p("What to look for: dates where a whole handful of rivers fired at "
+           "the same time — that's the fingerprint of a big storm or heatwave "
+           "sweeping through many watersheds."),
+        _h6("2. The Monthly Anomaly Bar Chart"),
+        _p("What it is: a long bar chart, one bar for every month since 2004, "
+           "showing how busy each month was."),
+        _p("What it shows: teal bars are calm months; red bars are months "
+           "where an unusual number of rivers were off their normal all at "
+           "once. Like the scorecards, it ignores your filters and tells the "
+           "full-record story."),
+        _p("How to use it: hover any bar to see that month's total and which "
+           "rivers were involved."),
+        _p("What to look for: whether the red bars are getting more common in "
+           "any season over the years — a pattern worth noticing."),
+        _h6("3. The Filter Bar"),
+        _p("What it is: the control bar that stays pinned to the top of the "
+           "page while you scroll, so the controls are always in reach."),
+        _p("What it shows: two choices — which thing to look at (river flow, "
+           "water level, or water temperature) and which day to inspect. "
+           "Everything below the bar updates to match."),
+        _p("How to use it: pick a measurement and a date, then watch the whole "
+           "page re-draw for that choice. The date picker opens into decade → "
+           "year → month so skipping across 20+ years is quick."),
+        _p("What to look for: switching measurements can tell a very different "
+           "story — a day when water levels look calm might hide unusual "
+           "flow, and vice versa."),
+        _h6("4. The KPI Cards"),
+        _p("What it is: four big headline numbers that summarize the whole "
+           "river network for the moment you've picked."),
+        _p("What it shows: how many rivers are running unusually high right "
+           "now, which one is climbing fastest (and by how much), which "
+           "region is running driest, and whether the sensors are reporting "
+           "properly."),
+        _p("How to use it: no clicking needed — the cards update on their own "
+           "whenever you change the measurement or date."),
+        _p("What to look for: a red count above zero, or a big “fastest riser” "
+           "number — those are your cue that it's worth digging in below."),
+        _h6("5. The National Overview Map"),
+        _p("What it is: a color-coded map of the whole country — each state "
+           "shaded by how its rivers are doing, with every river a dot sized "
+           "by how much water it carries."),
+        _p("What it shows: at a glance, which parts of the country are calm "
+           "and which are running unusually high or low, plus how big each "
+           "river is. The colors follow the same plain story as the rest of "
+           "the page: red = a lot of water, brown = running dry."),
+        _p("How to use it: click a state to focus on that region's story, or "
+           "click a river dot to pull up its details in the panels below (a "
+           "white ring marks your pick). Zoom and pan stick with you as the "
+           "data updates."),
+        _p("What to look for: a tight cluster of deep-red dots — a region "
+           "running very high — or a spread of brown — a region running dry. "
+           "The biggest dots are the major rivers."),
+        _h6("6. The Regional Rollup Table"),
+        _p("What it is: a compact table, one row per region, that sums up how "
+           "each part of the country is doing today."),
+        _p("What it shows: for every region, how many of its gauges are "
+           "reporting, how many rivers are behaving unusually, and the "
+           "region's overall mood — teal for running high, amber for running "
+           "low — ranked so the most stressed region sits on top."),
+        _p("How to use it: click a region row to focus the Fastest Risers "
+           "table below on that part of the country."),
+        _p("What to look for: which region concentrates today's action, and a "
+           "strongly amber (low) region — a possible drought signal."),
+        _h6("7. The Fastest Risers Table"),
+        _p("What it is: the top-five rivers in the region you've selected that "
+           "are changing fastest right now."),
+        _p("What it shows: which rivers are climbing (cyan) or dropping "
+           "(amber) the quickest over a three-day window, together with each "
+           "one's current flow."),
+        _p("How to use it: pick a region in the rollup table above to light "
+           "this panel up — it stays quiet until you do."),
+        _p("What to look for: a big cyan “climbing fast” number — that's a "
+           "flood-watch signal to take seriously."),
+        _h6("8. The Hydrograph"),
+        _p("What it is: one river's personal diary — a chart of a single "
+           "river's daily story, set against what that river normally does on "
+           "those same dates."),
+        _p("What it shows: whether the river is running above or below its "
+           "usual band for the season, how fast it's rising or falling, and "
+           "its current reading compared with its own history."),
+        _p("How to use it: pick a river on the map, then use the range buttons "
+           "(1M, 3M, 6M, 1Y, All) to zoom the window in or out."),
+        _p("What to look for: the white line poking outside the shaded normal "
+           "band, or a run of gray ×'s where the sensors went quiet — both "
+           "are worth understanding."),
+        _h6("9. The Personality Cards"),
+        _p("What it is: three cards that describe the character of the river "
+           "you've selected."),
+        _p("What it shows: how “flashy” the river tends to be, where today's "
+           "level sits in its whole history, and how close it is to an "
+           "all-time record."),
+        _p("How to use it: just select a river on the map — the cards follow "
+           "your choice automatically."),
+        _p("What to look for: context. A naturally lively river acting lively "
+           "is routine; a normally steady river suddenly near its all-time "
+           "high is genuinely notable."),
+        _h6("10. The Raw Data Drawer"),
+        _p("What it is: a drawer that slides up from the bottom to show the "
+           "exact, unedited source information behind whichever number you're "
+           "looking at."),
+        _p("What it shows: the fine print on any reading — whether the value "
+           "is confirmed or a provisional estimate, the units, and the "
+           "original source record the page is built on."),
+        _p("How to use it: click “Inspect raw data” to open the drawer and “"
+           "Download CSV” to grab a copy of the underlying records."),
+        _p("What to look for: this is the honesty layer — proof that every "
+           "number on the page traces back to a real, published measurement "
+           "you can check yourself."),
+    ]
+    return _section_card(
+        "What's on the dashboard? — A guided tour",
+        body,
+        icon="🧭",
+    )
 
 
 def _general_body() -> List[Any]:
@@ -214,6 +484,9 @@ def _general_body() -> List[Any]:
         icon="\U0001f321\ufe0f",
     )
 
+    s_dashboard_tour = _gen_dashboard_components()
+    s_hydro_tour = _gen_hydro_components()
+
     s_power = _section_card(
         "How do rivers talk to the power grid?",
         [
@@ -330,7 +603,8 @@ def _general_body() -> List[Any]:
         icon="\U0001f5c2\ufe0f",
     )
 
-    return [s_what, s_why, s_colors, s_unusual, s_power, s_cannot, s_sources]
+    return [s_what, s_why, s_colors, s_unusual, s_dashboard_tour, s_hydro_tour,
+            s_power, s_cannot, s_sources]
 
 
 
@@ -989,6 +1263,98 @@ def _components_guide() -> dbc.Card:
     return _section_card("Dashboard Components Guide", rows, icon="🧩")
 
 
+def _hydro_components_guide() -> dbc.Card:
+    """Hydro Coupling page component guide (B3): the five coupling panels.
+
+    Mirrors the Dashboard Components Guide rows (same _component_row format),
+    documenting the Hydro Coupling page's five panels: the coupling map, the
+    ranked coupling strip, the small-multiples grid, the drill-down (lag-0 /
+    lag-+1), and the GridStatus enrichment note.
+    """
+    rows = [
+        _component_row(
+            "\U0001f5fa", "Coupling Map",
+            "A U.S. Scattergeo map over the full 52-gauge field: 14 teal "
+            "\"tight\" markers (|\u03c1| \u2265 0.5, selectable) for the tight-tier "
+            "gauges on top of 38 faint gray context markers for the rest. "
+            "Marker color and size scale by |\u03c1| on the three-bin teal "
+            "sequential scale (weak \u2192 mid \u2192 strong), and a white ring "
+            "highlights the currently selected gauge.",
+            "corr_final \u00d7 gauge_geo (all 52 gauges via _all_gauges_geo); the "
+            "tight subset is filtered by tier and colored by _rho_bin(spearman). "
+            "Context markers carry no entity id and are inert by design.",
+            "Click a teal marker to select that gauge (drives the ranked strip "
+            "and drill-down); the selection gets a white ring. Zoom / pan persist "
+            "across updates (uirevision |hydro-map|).",
+            "Which tight gauges sit where \u2014 a strongly colored / larger marker "
+            "means a higher |\u03c1|, and the teal cluster should match the ranked "
+            "strip ordering below.",
+        ),
+        _component_row(
+            "\U0001f4ca", "Ranked Coupling Strip",
+            "A horizontal bar chart ranking all 14 tight gauges by |\u03c1| "
+            "(Spearman vs regional hydro), strongest on top. Marker color and "
+            "bar length both scale with |\u03c1|; the currently selected gauge's "
+            "bar fills brighter (cyan) so the selection is legible at a glance.",
+            "hydro_queries.get_ranked_coupling(), sorted by spearman_anom "
+            "descending; bar color via _rho_bin on the same three-bin teal scale.",
+            "Click a bar to select that gauge \u2014 the mirror of the map click, and "
+            "the two stay in sync. uirevision |hydro-strip| keeps the axis stable "
+            "across selections.",
+            "The top of the list is the strongest flow\u2192hydro link; read the "
+            "magnitudes to see how quickly the tight group drops off toward the "
+            "|\u03c1| = 0.5 boundary.",
+        ),
+        _component_row(
+            "\U0001f9e9", "Small-Multiples Grid",
+            "A 4\u00d74 grid of sparklines, one per tight gauge, overlaying the "
+            "de-seasonalized flow z-score (teal) against the hydro generation "
+            "z-score (amber) across the full aligned window. Each subplot's "
+            "title carries the gauge's region / state and its |\u03c1|.",
+            "hydro_queries.get_tight_gauges() (already |\u03c1| descending) + "
+            "per-gauge get_gauge_series(); both series are z-scored onto a "
+            "common dimensionless axis (the axes are hidden for the sparkline "
+            "look).",
+            "Hover a sparkline for day-level flow / hydro values; the grid is "
+            "purely observational (no click interaction).",
+            "Whether the teal and amber tracks actually rise and fall together \u2014 "
+            "sustained runs of co-movement are the signal, and a wide divergence "
+            "at a specific gauge flags a weaker coupling.",
+        ),
+        _component_row(
+            "\U0001f50d", "Drill-Down",
+            "The per-gauge comparison in two modes, chosen by the lag toggle. "
+            "Lag 0 (overlay): monthly flow anomaly vs hydro anomaly plotted "
+            "together over time with green shading wherever both move the same "
+            "direction. Lag +1 (scatter): each month's flow z-score against the "
+            "next month's hydro z-score, with a linear fit line and a Spearman "
+            "\u03c1 annotation (lag +1 \u03c1).",
+            "_drill_data for the selected gauge + its eia_location aggregate; "
+            "_build_overlay / _build_lag_scatter for the two modes.",
+            "Toggle Lag 0 \u2194 Lag +1; click a gauge on the map or the strip to "
+            "re-target the drill-down. Hover for month-level values.",
+            "Co-movement at lag-0 (matching rises / falls, green shading) is the "
+            "core signal; a lag-+1 scatter should stay weak \u2014 if it climbs, the "
+            "river carries predictive power beyond co-movement.",
+        ),
+        _component_row(
+            "\u26a1", "GridStatus Note",
+            "A small info card at the top of the page summarizing the BPA daily "
+            "hydro enrichment status \u2014 whether the 7 BPA-footprint gauges are "
+            "being extended with near-real-time daily GridStatus data or "
+            "falling back to monthly EIA data. It explains what daily data is "
+            "available and current for this build.",
+            "hydro_gridstatus.gridstatus_status_text() (lazy / guarded import) "
+            "\u2014 the same enrichment flag that drives the data refresh note.",
+            "Read-only status text; no interaction.",
+            "Whether BPA daily data is live (which gauges are extended) vs the "
+            "EIA monthly fallback \u2014 and the current month lag driving that "
+            "decision.",
+        ),
+    ]
+    return _section_card("Hydro Coupling Components Guide", rows, icon="\U0001f517")
+
+
 def _color_scale() -> dbc.Card:
     body = [
         _p(
@@ -1080,6 +1446,52 @@ def _methodology() -> dbc.Card:
              style={"marginTop": "10px"}),
     ]
     return _section_card("Data Sources & Methodology", body, icon="🗄️")
+
+
+def _data_refresh() -> dbc.Card:
+    body = [
+        _h6("Dashboard data (daily)"),
+        _p("The main Dashboard page fetches daily USGS streamflow, gage "
+           "height, and water temperature data. A launchd job (local) or "
+           "Cloud Run job (prod) runs at 7 AM PT every day to pull fresh "
+           "data, rebuild seasonal baselines and metrics, and publish the "
+           "updated parquet files. The Dashboard's date picker defaults to "
+           "the latest available date — typically yesterday."),
+        _h6("Hydro Coupling data (monthly)"),
+        _p("The Hydro Coupling page operates on a monthly grain: monthly "
+           "mean streamflow × monthly hydro generation. Two data sources "
+           "feed this page, each with a different refresh cadence:"),
+        _bullet("EIA monthly hydro generation",
+                "published ~2–3 months in arrears. The EIA HYC (conventional "
+                "hydroelectric) monthly data is the base layer for all 52 "
+                "gauges. As of August 2026, the latest EIA month is May 2026."),
+        _bullet("BPA daily hydro via GridStatus",
+                "extends 7 Pacific Northwest gauges (BPA footprint) with "
+                "near-real-time daily data, resampled to monthly. The current "
+                "month is excluded (≥25-day completeness gate), so BPA data "
+                "lags ~1 month. Non-BPA gauges remain capped at the EIA "
+                "publication lag until EIA catches up."),
+        _h6("What to expect"),
+        _bullet("BPA gauges (7 of 14 tight)",
+                "data extends through the previous month (e.g., August data "
+                "appears in early September once the month has ≥25 complete "
+                "days)."),
+        _bullet("Non-BPA gauges (45 of 52 total)",
+                "data extends through the last EIA-published month (~2–3 "
+                "months behind real time). August 2026 data is expected "
+                "October–November 2026."),
+        _bullet("Freshness sync",
+                "in Cloud Run, a 60-second poll checks the GCS "
+                "UPDATE_LOG.md generation. When the daily job publishes new "
+                "data, the serving container re-syncs from GCS and "
+                "invalidates both the Dashboard and Hydro Coupling query "
+                "caches, so both pages pick up fresh data without a redeploy."),
+        _sub("This monthly lag is inherent to the correlation methodology — "
+             "a full month of both streamflow and generation is needed for "
+             "a meaningful monthly data point.",
+             style={"marginTop": "10px"}),
+    ]
+    return _section_card("Data Refresh & Update Schedule", body, icon="🔄")
 
 
 def _stack() -> dbc.Card:

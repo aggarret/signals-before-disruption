@@ -246,6 +246,23 @@ def set_tight_cache(df: Optional[pd.DataFrame]) -> None:
     _TIGHT_CACHE = df
 
 
+def invalidate_caches() -> None:
+    """Clear per-thread DuckDB connections so the next query re-registers from fresh files.
+
+    Called by app.refresh_data_if_stale() after cloud_boot.sync_from_gcs() re-downloads
+    the hydro_correlation/ files. Safe to call repeatedly; no-op when no connection exists.
+    """
+    global _TIGHT_CACHE
+    conn = getattr(_thread_local, "hydro_conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _thread_local.hydro_conn = None
+    _TIGHT_CACHE = None
+
+
 if __name__ == "__main__":
     tight = get_tight_gauges()
     print("get_tight_gauges rows:", len(tight))

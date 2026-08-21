@@ -63,6 +63,7 @@ from dash import Dash, dcc, html
 import queries
 import cloud_boot
 import data_manager
+import hydro_queries
 from components import map_panel
 
 # ---------------------------------------------------------------------------
@@ -188,6 +189,7 @@ def refresh_data_if_stale() -> Optional[str]:
         print(f"app: detected new GCS dataset (generation {gen}) — re-syncing")
         cloud_boot.sync_from_gcs(bucket)
         queries.invalidate_caches()
+        hydro_queries.invalidate_caches()
         DEFAULT_DATE = str(map_panel.get_default_date(conn))
         _latest = conn.execute(
             f"SELECT MAX(observed_at) FROM read_parquet('{queries._EM_GLOB}')"
@@ -196,7 +198,7 @@ def refresh_data_if_stale() -> Optional[str]:
         TOTAL_ROWS = sum(
             int(queries._dataset_stats(conn, m)["total_rows"]) for m in _METRICS
         )
-        print(f"app: re-sync complete — LATEST_DATA_DATE={LATEST_DATA_DATE}")
+        print(f"app: re-sync complete — LATEST_DATA_DATE={LATEST_DATA_DATE} (hydro caches cleared)")
         return LATEST_DATA_DATE
     finally:
         _REFRESH_LOCK.release()

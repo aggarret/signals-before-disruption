@@ -364,6 +364,11 @@ def build_map_figure(
     plotly.express.choropleth (built-in USA-states GeoJSON); the gauge scatter
     is added with go.Scattergeo so both live on the same figure and share one
     geo scope / projection / zoom state (uirevision).
+
+    The uirevision includes the metric so that zoom/pan is preserved within
+    a single metric but the traces fully redraw when the metric changes —
+    without this, Plotly.js can skip re-rendering traces when uirevision is
+    static, causing the map to appear stuck on the initial metric's data.
     """
     date = date or get_default_date(conn)
     state_df = _region_states_frame(conn, metric, date)
@@ -412,7 +417,10 @@ def build_map_figure(
         margin=dict(l=0, r=0, t=30, b=0),
         height=560,
         geo=GEO_LAYOUT,
-        uirevision="map-panel",   # keep zoom/pan across metric/date/selection updates
+        # Include metric in uirevision so zoom/pan is preserved within a
+        # metric but traces fully redraw when the metric changes. A static
+        # uirevision causes Plotly.js to skip trace updates in some cases.
+        uirevision=f"map-panel:{metric}",   # keep zoom/pan within a metric
         showlegend=False,
     )
 

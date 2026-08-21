@@ -423,18 +423,18 @@ def _build_smallmultiples_figure() -> go.Figure:
         row, col = i // cols + 1, i % cols + 1
         flow_z = _zscore(s["mean_flow_cfs"])
         gen_z = _zscore(s["generation_thousand_mwh"])
-        x = list(range(len(s)))
+        x = pd.to_datetime(s["period"])
         fig.add_trace(go.Scatter(
             x=x, y=flow_z, mode="lines",
             line=dict(color=_TEAL_MID, width=1.4),
             name="flow", showlegend=False,
-            hovertemplate=f"{r.entity_id}<br>flow z = %{{y:.2f}}<extra></extra>",
+            hovertemplate=f"{r.entity_id}<br>%{{x|%b %Y}}<br>flow z = %{{y:.2f}}<extra></extra>",
         ), row=row, col=col)
         fig.add_trace(go.Scatter(
             x=x, y=gen_z, mode="lines",
             line=dict(color="#f59e0b", width=1.1),
             name="hydro", showlegend=False,
-            hovertemplate=f"{r.entity_id}<br>hydro z = %{{y:.2f}}<extra></extra>",
+            hovertemplate=f"{r.entity_id}<br>%{{x|%b %Y}}<br>hydro z = %{{y:.2f}}<extra></extra>",
         ), row=row, col=col)
     fig.update_layout(
         template=None,
@@ -447,7 +447,7 @@ def _build_smallmultiples_figure() -> go.Figure:
         uirevision="hydro-smallmultiples",
     )
     for ax in fig.select_xaxes():
-        ax.update(showticklabels=False, showgrid=False, zeroline=False)
+        ax.update(type="date", showticklabels=False, showgrid=False, zeroline=False)
     for ax in fig.select_yaxes():
         ax.update(showticklabels=False, showgrid=False, zeroline=False,
                   range=[-4, 4])
@@ -532,7 +532,7 @@ def _drill_data(gauge: str):
 
 
 def _build_overlay(s: pd.DataFrame, hydro: pd.DataFrame) -> go.Figure:
-    idx = np.arange(len(s))
+    x_dates = pd.to_datetime(s["period"])
     flow_a = _monthly_anomaly(s, "mean_flow_cfs")
     gen_a = _monthly_anomaly(hydro, "generation_thousand_mwh").astype(float)
 
@@ -552,7 +552,9 @@ def _build_overlay(s: pd.DataFrame, hydro: pd.DataFrame) -> go.Figure:
             while j + 1 < len(co) and co[j + 1]:
                 j += 1
             fig.add_shape(dict(type="rect", xref="x", yref="paper",
-                               x0=i - 0.5, x1=j + 0.5, y0=0, y1=1,
+                               x0=x_dates.iloc[i] - pd.Timedelta(days=1),
+                               x1=x_dates.iloc[j] + pd.Timedelta(days=1),
+                               y0=0, y1=1,
                                fillcolor="rgba(20,184,166,0.13)", layer="below",
                                line_width=0))
             i = j + 1
@@ -560,19 +562,15 @@ def _build_overlay(s: pd.DataFrame, hydro: pd.DataFrame) -> go.Figure:
             i += 1
 
     fig.add_trace(go.Scatter(
-        x=idx, y=flow_a, mode="lines", name="flow (de-seasonalized)",
+        x=x_dates, y=flow_a, mode="lines", name="flow (de-seasonalized)",
         line=dict(color=_TEAL_MID, width=1.6),
-        hovertemplate="flow z = %{y:.2f}<extra></extra>",
+        hovertemplate="flow z = %{y:.2f}<br>%{x|%b %Y}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=idx, y=gen_aligned, mode="lines", name="hydro (de-seasonalized)",
+        x=x_dates, y=gen_aligned, mode="lines", name="hydro (de-seasonalized)",
         line=dict(color="#f59e0b", width=1.4),
-        hovertemplate="hydro z = %{y:.2f}<extra></extra>",
+        hovertemplate="hydro z = %{y:.2f}<br>%{x|%b %Y}<extra></extra>",
     ))
-    # thinned period tick labels
-    step = max(1, len(s) // 10)
-    tickvals = list(range(0, len(s), step))
-    ticktext = [s["period"].iloc[t] for t in tickvals]
     fig.update_layout(
         template=None,
         paper_bgcolor=PAPER_BG, plot_bgcolor=PAPER_BG,
@@ -580,9 +578,9 @@ def _build_overlay(s: pd.DataFrame, hydro: pd.DataFrame) -> go.Figure:
                   size=11),
         margin=dict(l=72, r=24, t=40, b=72),
         height=420,
-        xaxis=dict(tickvals=tickvals, ticktext=ticktext, showgrid=False,
-                   zeroline=False, tickangle=-45, automargin=True,
-                   ticks="outside", showticklabels=True),
+        xaxis=dict(type="date", tickformat="%b %Y", nticks=10,
+                   showgrid=False, zeroline=False, tickangle=-45,
+                   automargin=True, ticks="outside", showticklabels=True),
         yaxis=dict(title=dict(text="monthly z-score", standoff=14),
                    gridcolor=BORDER, zeroline=True, zerolinecolor=BORDER,
                    automargin=True, tickangle=0, ticks="outside",
@@ -614,7 +612,7 @@ def _build_lag_scatter(s: pd.DataFrame, hydro: pd.DataFrame) -> go.Figure:
         marker=dict(color=_TEAL_MID, size=7, opacity=0.7,
                     line=dict(color=PAPER_BG, width=0.5)),
         customdata=[[s["period"].iloc[k]] for k in np.where(mask)[0]],
-        hovertemplate="month %{customdata[0]}<br>flow z = %{x:.2f} · "
+        hovertemplate="%{customdata[0]}<br>flow z = %{x:.2f} · "
                       "hydro next-mo z = %{y:.2f}<extra></extra>",
     ))
     if len(x) >= 3:
