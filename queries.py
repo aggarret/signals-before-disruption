@@ -223,7 +223,8 @@ def get_kpi_cards(
       extreme_events_today : # gauges with |anomaly_score| >= 2.5
       fastest_riser        : {entity_id, station_name, rise_rate_3d, value}
       most_below_normal    : region with lowest avg anomaly (daily mean)
-      data_health          : {gauges_reporting, gap_rate, total_rows, last_date}
+      data_health          : {gauges_reporting, total_gauges, gap_rate,
+                            total_rows, last_date}
     """
     df = _cached_slice(conn, metric, date)
     if df.empty:
@@ -252,8 +253,14 @@ def get_kpi_cards(
     most_below = str(grp.idxmin()) if not grp.empty else None
 
     stats = _dataset_stats(conn, metric)
+    # gauges_reporting = % of gauges actively reporting (completeness > 0) = colored
+    #          dots on the map. total_gauges = every gauge with a row this day =
+    #          ALL dots on the map (including grey completeness==0 gauges). The KPI
+    #          card renders "X/Y gauges reporting" where X = gauges_reporting and
+    #          Y = total_gauges, so the count always matches the map render.
     health = {
         "gauges_reporting": int((df["completeness_score"] > 0).sum()),
+        "total_gauges": int(len(df)),
         "gap_rate": stats["gap_rate"],       # overall share of explicit gap rows
         "total_rows": stats["total_rows"],   # rows in daily_entity_metrics for metric
         "last_date": stats["last_date"],

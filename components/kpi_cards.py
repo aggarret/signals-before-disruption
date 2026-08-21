@@ -167,15 +167,18 @@ def render_kpi_cards(
     # --- card 4: data health --------------------------------------------------
     health = k.get("data_health")
     if health:
-        total = int(conn.execute("SELECT count(*) FROM stations").fetchone()[0])
+        # n_rep   = gauges actively reporting (completeness > 0) = colored map dots
+        # n_map   = all gauges present on the map that day = every row/dot
+        #           (including grey completeness==0 gauges)
         n_rep = int(health.get("gauges_reporting") or 0)
+        n_map = int(health.get("total_gauges") or 0)
         gap = float(health.get("gap_rate") or 0.0)
         rows = int(health.get("total_rows") or 0)
         c4 = _kpi_card(
             "✅", "Data Health",
-            f"{n_rep}/{total} gauges",
+            f"{n_rep}/{n_map} gauges reporting",
             [f"gap rate {gap * 100:.2f}%", f"{rows:,} total rows"],
-            value_color=Z_TEAL if n_rep >= total * 0.9 else Z_AMBER,
+            value_color=Z_TEAL if n_map and n_rep >= n_map * 0.9 else Z_AMBER,
         )
     else:
         c4 = _kpi_card("✅", "Data Health", "—", "no data")
